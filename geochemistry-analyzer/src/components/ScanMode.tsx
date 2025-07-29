@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { GeochemData, ScanResult, ScanOptions, ScanSummary } from '@/types/geochem'
 import { calculateStatistics } from '@/lib/statistics'
 import ScanResultCard from './ScanResultCard'
-import ScanReport from './ScanReport'
+// import ScanReport from './ScanReport' // 임시 비활성화
 import { Play, Settings, Download, Filter, TrendingUp, AlertCircle, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react'
 
 interface ScanModeProps {
@@ -547,14 +547,14 @@ export default function ScanMode({
         </div>
       )}
 
-      {/* PDF 리포트 모달 */}
-      {showReport && scanSummary && (
+      {/* PDF 리포트 모달 - 임시 비활성화 */}
+      {/* {showReport && scanSummary && (
         <ScanReport
           summary={scanSummary}
           results={scanResults}
           onClose={() => setShowReport(false)}
         />
-      )}
+      )} */}
     </div>
   )
 } 
