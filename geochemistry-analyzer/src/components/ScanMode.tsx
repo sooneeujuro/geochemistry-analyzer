@@ -83,7 +83,12 @@ export default function ScanMode({
   // AI 관련 상태
   const [aiRecommendations, setAiRecommendations] = useState<AIRecommendation[]>([])
   const [isLoadingAI, setIsLoadingAI] = useState(false)
-  const [aiError, setAiError] = useState<string | null>(null)
+  const [aiError, setAiError] = useState<string>('')
+  const [columnFilterInfo, setColumnFilterInfo] = useState<{
+    originalCount: number
+    filteredCount: number
+    filterReasons: string[]
+  } | null>(null)
 
   // 의미없는 컬럼들 자동 감지 (ID, 번호 등)
   const autoExcludeColumns = useMemo(() => {
@@ -181,47 +186,55 @@ export default function ScanMode({
     }
   }
 
-  // AI 추천 받기 (백엔드 API 호출)
+  // AI 추천 결과 처리
   const getAIRecommendationsList = async () => {
+    if (!data || data.numericColumns.length < 2) {
+      alert('최소 2개 이상의 수치 컬럼이 필요합니다.')
+      return
+    }
+
     setIsLoadingAI(true)
-    setAiError(null)
+    setAiError('')
 
     try {
-      // 백엔드 API 호출 (안전함)
       const response = await fetch('/api/ai-recommendations', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          columns: analysisColumns,
-          sampleDescription: scanOptions.sampleDescription || '',
-          provider: scanOptions.aiProvider!,
-          maxRecommendations: 10
+          columns: data.numericColumns,
+          sampleDescription: scanOptions.sampleDescription || '지구화학 데이터 분석',
+          maxRecommendations: 6,
+          provider: scanOptions.aiProvider
         })
       })
 
-              if (!response.ok) {
-          let errorData;
-          try {
-            errorData = await response.json()
-          } catch {
-            errorData = { error: `HTTP ${response.status}: ${response.statusText}` }
-          }
-          console.error('API Error Details:', {
-            status: response.status,
-            statusText: response.statusText,
-            errorData
-          })
-          throw new Error(errorData.error || `API 호출 실패: ${response.status}`)
-        }
-
       const result = await response.json()
-      setAiRecommendations(result.recommendations || [])
-      setAiError(null)
+
+      if (!response.ok) {
+        throw new Error(result.error || `HTTP ${response.status}`)
+      }
+
+      if (result.success && result.recommendations) {
+        setAiRecommendations(result.recommendations)
+        
+        // 컬럼 필터링 정보 표시
+        if (result.columnFiltering && result.columnFiltering.filterReasons.length > 0) {
+          setColumnFilterInfo({
+            originalCount: result.columnFiltering.originalCount,
+            filteredCount: result.columnFiltering.filteredCount,
+            filterReasons: result.columnFiltering.filterReasons
+          })
+        } else {
+          setColumnFilterInfo(null)
+        }
+      } else {
+        throw new Error('추천 결과를 받지 못했습니다.')
+      }
     } catch (error) {
       console.error('AI Recommendations Error:', error)
-      setAiError(error instanceof Error ? error.message : 'AI 추천을 받는데 실패했습니다.')
+      setAiError(error instanceof Error ? error.message : 'Unknown error')
     } finally {
       setIsLoadingAI(false)
     }
@@ -562,7 +575,7 @@ export default function ScanMode({
         significantCombinations: significantResultsCount,
         topResults: results.filter(r => r.isSignificant).slice(0, 10),
         executionTime,
-        fileName: data.metadata.fileName,
+        fileName: data.fileName,
         scanOptions,
         aiRecommendationsUsed: scanOptions.useAIRecommendations,
         aiRecommendationsCount: aiRecommendations.length
@@ -893,6 +906,27 @@ export default function ScanMode({
                       <div key={idx} className="text-xs text-green-700 flex items-center justify-between">
                         <span>{rec.xColumn} vs {rec.yColumn}</span>
                         <span className="font-medium">신뢰도: {rec.confidence}/10</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 컬럼 필터링 정보 */}
+              {columnFilterInfo && columnFilterInfo.filterReasons.length > 0 && (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+                  <div className="flex items-center mb-2">
+                    <span className="text-sm font-medium text-blue-800">
+                      🔍 스마트 컬럼 필터링 결과
+                    </span>
+                  </div>
+                  <div className="text-xs text-blue-700 mb-2">
+                    원본 {columnFilterInfo.originalCount}개 → 필터링 후 {columnFilterInfo.filteredCount}개 컬럼
+                  </div>
+                  <div className="space-y-1 max-h-24 overflow-y-auto">
+                    {columnFilterInfo.filterReasons.map((reason, idx) => (
+                      <div key={idx} className="text-xs text-blue-600 bg-blue-100 p-2 rounded">
+                        {reason}
                       </div>
                     ))}
                   </div>

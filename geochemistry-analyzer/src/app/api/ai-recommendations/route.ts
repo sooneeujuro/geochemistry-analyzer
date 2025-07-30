@@ -1,5 +1,106 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+// 스마트 컬럼 필터링 함수
+function filterSimilarColumns(columns: string[]): { 
+  filteredColumns: string[], 
+  filterReasons: string[] 
+} {
+  const filteredColumns: string[] = []
+  const filterReasons: string[] = []
+  const usedBaseNames = new Set<string>()
+
+  // 지구화학 원소/화합물 패턴 매칭
+  const geochemPatterns = [
+    // 주요 원소
+    /^(SiO2|Al2O3|Fe2O3|FeO|MgO|CaO|Na2O|K2O|TiO2|P2O5|MnO|Cr2O3)([_%\-\s]*(wt|weight|percent|pct|ppm|ppb|mg|kg|g).*)?$/i,
+    // 미량원소
+    /^(Ba|Sr|Rb|Cs|Li|Be|Sc|V|Cr|Co|Ni|Cu|Zn|Ga|Pb|Th|U|Nb|Ta|Zr|Hf|Y)([_%\-\s]*(wt|weight|percent|pct|ppm|ppb|mg|kg|g).*)?$/i,
+    // 희토류 원소
+    /^(La|Ce|Pr|Nd|Sm|Eu|Gd|Tb|Dy|Ho|Er|Tm|Yb|Lu)([_%\-\s]*(wt|weight|percent|pct|ppm|ppb|mg|kg|g).*)?$/i,
+    // 일반 원소
+    /^([A-Z][a-z]?)([_%\-\s]*(wt|weight|percent|pct|ppm|ppb|mg|kg|g).*)?$/i
+  ]
+
+  // 기본 이름 추출 함수
+  function extractBaseName(column: string): string {
+    const cleanColumn = column.trim()
+    
+    // 지구화학 패턴에서 기본 이름 추출
+    for (const pattern of geochemPatterns) {
+      const match = cleanColumn.match(pattern)
+      if (match) {
+        return match[1].toUpperCase() // 기본 원소/화합물 이름을 대문자로 정규화
+      }
+    }
+    
+    // 일반적인 접미사 제거
+    const suffixPattern = /^([^_%\-\s]+)([_%\-\s]*(wt|weight|percent|pct|ppm|ppb|mg|kg|g|ratio|norm|normalized).*)?$/i
+    const suffixMatch = cleanColumn.match(suffixPattern)
+    if (suffixMatch) {
+      return suffixMatch[1].toUpperCase()
+    }
+    
+    return cleanColumn.toUpperCase()
+  }
+
+  // 컬럼 우선순위 결정 함수 (더 짧고 표준적인 이름 선호)
+  function getColumnPriority(column: string): number {
+    const cleanColumn = column.toLowerCase()
+    let priority = 0
+    
+    // 짧은 이름일수록 높은 우선순위
+    priority += Math.max(0, 20 - column.length)
+    
+    // 표준 단위 선호도
+    if (cleanColumn.includes('wt%') || cleanColumn.includes('weight')) priority += 10
+    if (cleanColumn.includes('ppm')) priority += 8
+    if (cleanColumn.includes('percent')) priority += 7
+    if (cleanColumn.includes('pct')) priority += 6
+    
+    // 특수 문자가 적을수록 높은 우선순위
+    const specialChars = (column.match(/[_%\-\s]/g) || []).length
+    priority += Math.max(0, 10 - specialChars * 2)
+    
+    return priority
+  }
+
+  // 컬럼들을 기본 이름별로 그룹화
+  const columnGroups = new Map<string, string[]>()
+  columns.forEach(column => {
+    const baseName = extractBaseName(column)
+    if (!columnGroups.has(baseName)) {
+      columnGroups.set(baseName, [])
+    }
+    columnGroups.get(baseName)!.push(column)
+  })
+
+  // 각 그룹에서 최적의 컬럼 선택
+  columnGroups.forEach((groupColumns, baseName) => {
+    if (groupColumns.length === 1) {
+      // 중복이 없는 경우 그대로 추가
+      filteredColumns.push(groupColumns[0])
+    } else {
+      // 중복이 있는 경우 우선순위에 따라 최적의 컬럼 선택
+      const sortedColumns = groupColumns.sort((a, b) => 
+        getColumnPriority(b) - getColumnPriority(a)
+      )
+      
+      const selectedColumn = sortedColumns[0]
+      const rejectedColumns = sortedColumns.slice(1)
+      
+      filteredColumns.push(selectedColumn)
+      
+      // 걸러진 이유 설명
+      if (rejectedColumns.length > 0) {
+        const reason = `📋 ${baseName} 관련 컬럼들: [${groupColumns.join(', ')}] → "${selectedColumn}" 선택 (중복 제거)`
+        filterReasons.push(reason)
+      }
+    }
+  })
+
+  return { filteredColumns, filterReasons }
+}
+
 interface AIRecommendationRequest {
   columns: string[]
   sampleDescription?: string
@@ -38,6 +139,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // 스마트 컬럼 필터링
+    const { filteredColumns, filterReasons } = filterSimilarColumns(columns)
+    if (filteredColumns.length < 2) {
+      return NextResponse.json(
+        { error: 'After filtering, at least 2 columns are required' },
+        { status: 400 }
+      )
+    }
+
     // 서버 환경변수에서 API 키 가져오기 (안전함)
     const openaiKey = process.env.OPENAI_API_KEY
     const googleKey = process.env.GOOGLE_AI_API_KEY
@@ -61,14 +171,14 @@ export async function POST(request: NextRequest) {
 
     if (provider === 'openai') {
       recommendations = await getOpenAIRecommendations({
-        columns,
+        columns: filteredColumns,
         sampleDescription,
         maxRecommendations,
         apiKey: openaiKey!
       })
     } else {
       recommendations = await getGoogleAIRecommendations({
-        columns,
+        columns: filteredColumns,
         sampleDescription,
         maxRecommendations,
         apiKey: googleKey!
@@ -79,7 +189,12 @@ export async function POST(request: NextRequest) {
       success: true,
       recommendations,
       provider,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      columnFiltering: {
+        originalCount: columns.length,
+        filteredCount: filteredColumns.length,
+        filterReasons: filterReasons
+      }
     })
 
   } catch (error) {
