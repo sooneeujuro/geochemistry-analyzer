@@ -348,13 +348,15 @@ export default function ScanMode({
   return (
     <div className="space-y-6">
       {/* 스캔 옵션 및 제어 */}
-      <div className="bg-white rounded-lg shadow-lg p-6">
+      <div className="rounded-lg shadow-xl p-6" style={{backgroundColor: 'white', border: '3px solid #74CEF7'}}>
         <div className="flex justify-between items-center mb-4">
           <div>
-            <h2 className="text-xl font-semibold text-gray-800">스캔 설정</h2>
+            <h2 className="text-xl font-semibold flex items-center" style={{color: '#0357AF'}}>
+              ⚙️ 스캔 설정
+            </h2>
             {scanResults.length > 0 && (
-              <p className="text-sm text-green-600 mt-1">
-                ✓ 스캔 완료됨 ({scanSummary?.executionTime ? (scanSummary.executionTime / 1000).toFixed(1) : '?'}초 소요)
+              <p className="text-sm mt-1" style={{color: '#0180CC'}}>
+                ✅ 스캔 완료됨 ({scanSummary?.executionTime ? (scanSummary.executionTime / 1000).toFixed(1) : '?'}초 소요)
               </p>
             )}
           </div>
@@ -371,17 +373,17 @@ export default function ScanMode({
 
         {/* 스캔 통계 요약 */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <div className="text-2xl font-bold text-blue-600">{totalCombinations}</div>
-            <div className="text-sm text-gray-600">총 조합 수</div>
+          <div className="p-4 rounded-lg shadow-sm border-2" style={{backgroundColor: '#E6FBFA', borderColor: '#74CEF7'}}>
+            <div className="text-2xl font-bold" style={{color: '#0357AF'}}>{totalCombinations}</div>
+            <div className="text-sm" style={{color: '#0180CC'}}>📊 총 조합 수</div>
           </div>
-          <div className="bg-green-50 p-4 rounded-lg">
-            <div className="text-2xl font-bold text-green-600">{significantResults.length}</div>
-            <div className="text-sm text-gray-600">유의미한 조합</div>
+          <div className="p-4 rounded-lg shadow-sm border-2" style={{backgroundColor: '#9BE8F0', borderColor: '#0180CC'}}>
+            <div className="text-2xl font-bold" style={{color: '#0357AF'}}>{significantResults.length}</div>
+            <div className="text-sm" style={{color: '#0180CC'}}>✨ 유의미한 조합</div>
           </div>
-          <div className="bg-purple-50 p-4 rounded-lg">
-            <div className="text-2xl font-bold text-purple-600">{analysisColumns.length}</div>
-            <div className="text-sm text-gray-600">분석 대상 컬럼</div>
+          <div className="p-4 rounded-lg shadow-sm border-2" style={{backgroundColor: '#74CEF7', borderColor: '#0357AF'}}>
+            <div className="text-2xl font-bold text-white">{analysisColumns.length}</div>
+            <div className="text-sm text-white opacity-90">🔬 분석 대상 컬럼</div>
           </div>
         </div>
 
@@ -403,17 +405,23 @@ export default function ScanMode({
           <button
             onClick={startNewScan}
             disabled={isScanning}
-            className="w-full px-6 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center font-medium"
+            className="w-full px-6 py-3 text-white rounded-lg hover:shadow-lg disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center font-medium transition-all"
+            style={{
+              backgroundColor: isScanning ? '#9CA3AF' : '#E4815A'
+            }}
           >
             <RotateCcw className="h-5 w-5 mr-2" />
-            새 스캔 시작
+            🔄 새 스캔 시작
           </button>
         ) : (
           // 스캔 결과가 없는 경우 - 일반 스캔 시작 버튼
           <button
             onClick={performScan}
             disabled={isScanning || analysisColumns.length < 2}
-            className="w-full px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center font-medium"
+            className="w-full px-6 py-3 text-white rounded-lg hover:shadow-lg disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center font-medium transition-all"
+            style={{
+              backgroundColor: isScanning || analysisColumns.length < 2 ? '#9CA3AF' : '#0357AF'
+            }}
           >
             {isScanning ? (
               <>
@@ -483,11 +491,12 @@ export default function ScanMode({
             <div className="space-y-4">
               {/* AI 제공자 선택 */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  AI 제공자
+                <label className="block text-sm font-medium mb-3" style={{color: '#0357AF'}}>
+                  🤖 AI 제공자 선택
                 </label>
-                <div className="flex space-x-4">
-                  <label className="flex items-center">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label className="flex items-start p-4 border-2 rounded-lg cursor-not-allowed opacity-60 transition-all"
+                         style={{borderColor: '#74CEF7', backgroundColor: '#E6FBFA'}}>
                     <input
                       type="radio"
                       name="aiProvider"
@@ -497,11 +506,31 @@ export default function ScanMode({
                         ...scanOptions,
                         aiProvider: e.target.value as 'google'
                       })}
-                      className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                      className="w-4 h-4 mt-1"
+                      disabled
+                      style={{accentColor: '#0180CC'}}
                     />
-                    <span className="ml-2 text-sm">Google AI (Gemini) - 저렴함</span>
+                    <div className="ml-3 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium" style={{color: '#0357AF'}}>
+                          Google AI (Gemini)
+                        </span>
+                        <span className="text-xs px-2 py-1 rounded-full text-white font-medium"
+                              style={{backgroundColor: '#E4815A'}}>
+                          🔧 점검중
+                        </span>
+                      </div>
+                      <div className="text-xs mt-1" style={{color: '#0180CC'}}>
+                        일시적으로 사용 불가능
+                      </div>
+                    </div>
                   </label>
-                  <label className="flex items-center">
+                  
+                  <label className="flex items-start p-4 border-2 rounded-lg cursor-pointer hover:shadow-lg transition-all"
+                         style={{
+                           borderColor: scanOptions.aiProvider === 'openai' ? '#0180CC' : '#74CEF7',
+                           backgroundColor: scanOptions.aiProvider === 'openai' ? '#9BE8F0' : '#E6FBFA'
+                         }}>
                     <input
                       type="radio"
                       name="aiProvider"
@@ -511,9 +540,22 @@ export default function ScanMode({
                         ...scanOptions,
                         aiProvider: e.target.value as 'openai'
                       })}
-                      className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                      className="w-4 h-4 mt-1"
+                      style={{accentColor: '#0180CC'}}
                     />
-                    <span className="ml-2 text-sm">OpenAI (GPT-4) - 고품질</span>
+                    <div className="ml-3 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium" style={{color: '#0357AF'}}>
+                          OpenAI (GPT-4)
+                        </span>
+                        <span className="text-xs px-2 py-1 rounded-full bg-green-500 text-white font-medium">
+                          ✅ 정상
+                        </span>
+                      </div>
+                      <div className="text-xs mt-1" style={{color: '#0180CC'}}>
+                        고품질 원소 비율 추천
+                      </div>
+                    </div>
                   </label>
                 </div>
               </div>
