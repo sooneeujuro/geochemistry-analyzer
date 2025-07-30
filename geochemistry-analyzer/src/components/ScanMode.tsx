@@ -48,6 +48,10 @@ export default function ScanMode({
   // 선택된 변수들 관리 (PCA 추천용)
   const [selectedVariables, setSelectedVariables] = useState<Set<string>>(new Set())
   
+  // 결과 필터링 및 페이지네이션 관리
+  const [filterVariable, setFilterVariable] = useState<string>('')
+  const [pageInput, setPageInput] = useState<string>('')
+  
   // 외부에서 받은 스캔 결과를 사용하거나, 없으면 빈 배열 사용
   const scanResults = externalScanResults
   const scanSummary = externalScanSummary
@@ -109,7 +113,46 @@ export default function ScanMode({
   const significantResults = useMemo(() => 
     scanResults.filter(r => r.isSignificant), [scanResults])
   
-  const allResults = useMemo(() => scanResults, [scanResults])
+  // 필터링된 결과 계산
+  const filteredResults = useMemo(() => {
+    if (!filterVariable) return scanResults
+    
+    return scanResults
+      .filter(result => result.xColumn === filterVariable || result.yColumn === filterVariable)
+      .sort((a, b) => {
+        // 선택된 변수와의 상관관계 강도로 정렬
+        const corrA = Math.abs(a.statistics.pearsonCorr || 0)
+        const corrB = Math.abs(b.statistics.pearsonCorr || 0)
+        return corrB - corrA
+      })
+  }, [scanResults, filterVariable])
+  
+  const allResults = useMemo(() => filteredResults, [filteredResults])
+
+  // 고유한 변수들 목록 (필터링용)
+  const uniqueVariables = useMemo(() => {
+    const variables = new Set<string>()
+    scanResults.forEach(result => {
+      variables.add(result.xColumn)
+      variables.add(result.yColumn)
+    })
+    return Array.from(variables).sort()
+  }, [scanResults])
+
+  // 페이지 입력 핸들러
+  const handlePageInputChange = (value: string) => {
+    setPageInput(value)
+  }
+
+  const handlePageInputSubmit = () => {
+    const pageNum = parseInt(pageInput)
+    if (pageNum >= 1 && pageNum <= totalPages) {
+      setCurrentPage(pageNum)
+      setPageInput('')
+    } else {
+      alert(`1부터 ${totalPages}까지의 페이지 번호를 입력해주세요.`)
+    }
+  }
 
   // 페이지네이션된 결과
   const paginatedResults = useMemo(() => {
@@ -119,6 +162,13 @@ export default function ScanMode({
   }, [allResults, currentPage, resultsPerPage])
 
   const totalPages = Math.ceil(allResults.length / resultsPerPage)
+  
+  // 필터 변경으로 인해 현재 페이지가 총 페이지를 초과하는 경우 조정
+  useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(1)
+    }
+  }, [totalPages, currentPage])
 
   const startNewScan = () => {
     // 새 스캔 시작 - 결과 초기화
@@ -1080,32 +1130,121 @@ export default function ScanMode({
 
           {/* 전체 결과 표시 */}
           <div className="border-t border-gray-200 pt-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium text-gray-800">
-                전체 결과 ({allResults.length}개)
-              </h3>
+            {/* 필터링 및 제어 */}
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-4">
+              <div className="flex items-center gap-4">
+                <h3 className="text-lg font-medium text-gray-800">
+                  전체 결과 ({allResults.length}개)
+                </h3>
+                
+                {/* 변수 필터링 */}
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium" style={{color: '#0357AF'}}>
+                    변수 필터:
+                  </label>
+                  <select
+                    value={filterVariable}
+                    onChange={(e) => {
+                      setFilterVariable(e.target.value)
+                      setCurrentPage(1) // 필터 변경시 첫 페이지로
+                    }}
+                    className="text-sm border border-gray-300 rounded-md px-3 py-1"
+                    style={{minWidth: '120px'}}
+                  >
+                    <option value="">전체 보기</option>
+                    {uniqueVariables.map(variable => (
+                      <option key={variable} value={variable}>
+                        {variable}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* 페이지네이션 제어 */}
               {totalPages > 1 && (
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                    disabled={currentPage === 1}
-                    className="p-2 text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <span className="text-sm text-gray-600">
-                    {currentPage} / {totalPages}
-                  </span>
-                  <button
-                    onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                    disabled={currentPage === totalPages}
-                    className="p-2 text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
+                <div className="flex items-center gap-3">
+                  {/* 페이지 직접 입력 */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">페이지:</span>
+                    <input
+                      type="number"
+                      value={pageInput}
+                      onChange={(e) => handlePageInputChange(e.target.value)}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          handlePageInputSubmit()
+                        }
+                      }}
+                      placeholder={currentPage.toString()}
+                      className="w-16 text-sm border border-gray-300 rounded-md px-2 py-1 text-center"
+                      min="1"
+                      max={totalPages}
+                    />
+                    <button
+                      onClick={handlePageInputSubmit}
+                      className="text-xs px-2 py-1 rounded-md text-white"
+                      style={{backgroundColor: '#74CEF7'}}
+                    >
+                      이동
+                    </button>
+                  </div>
+
+                  {/* 기존 페이지네이션 버튼들 */}
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => setCurrentPage(1)}
+                      disabled={currentPage === 1}
+                      className="p-2 text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed"
+                      title="첫 페이지"
+                    >
+                      ⏮️
+                    </button>
+                    <button
+                      onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                      disabled={currentPage === 1}
+                      className="p-2 text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <span className="text-sm font-medium px-2" style={{color: '#0357AF'}}>
+                      {currentPage} / {totalPages}
+                    </span>
+                    <button
+                      onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                      disabled={currentPage === totalPages}
+                      className="p-2 text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => setCurrentPage(totalPages)}
+                      disabled={currentPage === totalPages}
+                      className="p-2 text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed"
+                      title="마지막 페이지"
+                    >
+                      ⏭️
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
+
+            {/* 필터링 상태 표시 */}
+            {filterVariable && (
+              <div className="mb-4 p-3 rounded-md" style={{backgroundColor: '#E6FBFA', border: '1px solid #9BE8F0'}}>
+                <span className="text-sm" style={{color: '#0357AF'}}>
+                  🔍 <strong>{filterVariable}</strong>와(과) 상관관계가 있는 결과들을 상관계수 순으로 표시 중
+                  <button
+                    onClick={() => setFilterVariable('')}
+                    className="ml-2 text-xs px-2 py-1 rounded-md text-white"
+                    style={{backgroundColor: '#E4815A'}}
+                  >
+                    필터 해제
+                  </button>
+                </span>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {paginatedResults.map((result) => (
