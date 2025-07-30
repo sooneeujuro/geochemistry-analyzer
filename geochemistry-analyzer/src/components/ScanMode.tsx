@@ -45,6 +45,9 @@ export default function ScanMode({
   const [methodRecommendations, setMethodRecommendations] = useState<any[]>([])
   const [isLoadingStats, setIsLoadingStats] = useState(false)
   
+  // 선택된 변수들 관리 (PCA 추천용)
+  const [selectedVariables, setSelectedVariables] = useState<Set<string>>(new Set())
+  
   // 외부에서 받은 스캔 결과를 사용하거나, 없으면 빈 배열 사용
   const scanResults = externalScanResults
   const scanSummary = externalScanSummary
@@ -212,6 +215,27 @@ export default function ScanMode({
     }
   }
 
+  // 변수 선택/해제 함수들
+  const toggleVariableSelection = (variable: string) => {
+    setSelectedVariables(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(variable)) {
+        newSet.delete(variable)
+      } else {
+        newSet.add(variable)
+      }
+      return newSet
+    })
+  }
+
+  const clearVariableSelection = () => {
+    setSelectedVariables(new Set())
+  }
+
+  const selectAllFromSuggestion = (variables: string[]) => {
+    setSelectedVariables(new Set(variables))
+  }
+
   // PCA 추천 조합으로 바로 분석 실행
   const runPCAAnalysis = async (variables: string[]) => {
     if (variables.length < 2) {
@@ -230,6 +254,41 @@ export default function ScanMode({
 
     // 스캔 실행 알림
     alert(`PCA 추천 변수들 (${variables.join(', ')})로 분석을 시작합니다.`)
+
+    // 약간의 딜레이 후 스캔 실행 (상태 업데이트 반영)
+    setTimeout(() => {
+      performScan()
+    }, 200)
+  }
+
+  // 선택된 변수들로 분석 실행
+  const runSelectedVariablesAnalysis = async () => {
+    const selected = Array.from(selectedVariables)
+    
+    if (selected.length < 2) {
+      alert('최소 2개 이상의 변수를 선택해주세요.')
+      return
+    }
+
+    if (selected.length > 10) {
+      const confirmed = confirm(`${selected.length}개 변수로 ${selected.length * (selected.length - 1) / 2}개 조합을 분석합니다. 계속하시겠습니까?`)
+      if (!confirmed) return
+    }
+
+    // 선택된 변수들만 분석하도록 excludeColumns 설정
+    const variablesToExclude = data.numericColumns.filter(col => !selected.includes(col))
+    
+    setScanOptions(prev => ({
+      ...prev,
+      excludeColumns: variablesToExclude,
+      aiRecommendationsOnly: false
+    }))
+
+    // 선택 상태 초기화
+    clearVariableSelection()
+
+    // 스캔 실행 알림
+    alert(`선택한 ${selected.length}개 변수 (${selected.join(', ')})로 분석을 시작합니다.`)
 
     // 약간의 딜레이 후 스캔 실행 (상태 업데이트 반영)
     setTimeout(() => {
@@ -779,44 +838,122 @@ export default function ScanMode({
                   </button>
                 </div>
                 
-                {pcaSuggestions.length > 0 && (
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {pcaSuggestions.map((suggestion, idx) => (
-                      <div key={idx} className="p-3 rounded-md bg-white border">
-                        <div className="flex justify-between items-start mb-1">
-                          <span className="text-sm font-medium" style={{color: '#0357AF'}}>
-                            {suggestion.variables.join(', ')}
+                                {pcaSuggestions.length > 0 && (
+                  <div className="space-y-3">
+                    {/* 선택 컨트롤 */}
+                    <div className="flex justify-between items-center p-3 rounded-md" style={{backgroundColor: '#F0F8FF', border: '1px solid #74CEF7'}}>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium" style={{color: '#0357AF'}}>
+                          변수 선택: {selectedVariables.size}개
+                        </span>
+                        {selectedVariables.size > 0 && (
+                          <span className="text-xs" style={{color: '#0180CC'}}>
+                            ({Array.from(selectedVariables).join(', ')})
                           </span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs px-2 py-0.5 rounded-full text-white"
-                                  style={{backgroundColor: '#0180CC'}}>
-                              신뢰도: {(suggestion.confidence * 100).toFixed(0)}%
-                            </span>
-                            <button
-                              onClick={() => runPCAAnalysis(suggestion.variables)}
-                              disabled={isScanning}
-                              className="text-xs px-2 py-1 rounded-md text-white font-medium transition-all"
-                              style={{
-                                backgroundColor: isScanning ? '#9CA3AF' : '#E4815A',
-                                cursor: isScanning ? 'not-allowed' : 'pointer'
-                              }}
-                              title="이 조합으로 즉시 분석 실행"
-                            >
-                              🚀 분석 실행
-                            </button>
-                          </div>
-                        </div>
-                        <p className="text-xs" style={{color: '#0180CC'}}>
-                          {suggestion.reason}
-                        </p>
-                        {suggestion.varianceExplained && (
-                          <div className="text-xs mt-1" style={{color: '#666'}}>
-                            설명력: PC1({suggestion.varianceExplained[0]?.toFixed(1)}%), 
-                            PC2({suggestion.varianceExplained[1]?.toFixed(1)}%)
-                          </div>
                         )}
                       </div>
-                    ))}
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={clearVariableSelection}
+                          disabled={selectedVariables.size === 0}
+                          className="text-xs px-2 py-1 rounded-md transition-all"
+                          style={{
+                            backgroundColor: selectedVariables.size === 0 ? '#E5E7EB' : '#9BE8F0',
+                            color: selectedVariables.size === 0 ? '#9CA3AF' : '#0357AF'
+                          }}
+                        >
+                          선택 해제
+                        </button>
+                        <button
+                          onClick={runSelectedVariablesAnalysis}
+                          disabled={isScanning || selectedVariables.size < 2}
+                          className="text-xs px-3 py-1 rounded-md text-white font-medium transition-all"
+                          style={{
+                            backgroundColor: isScanning || selectedVariables.size < 2 ? '#9CA3AF' : '#74CEF7',
+                            cursor: isScanning || selectedVariables.size < 2 ? 'not-allowed' : 'pointer'
+                          }}
+                          title="선택한 변수들로 조합 분석 실행"
+                        >
+                          ☑️ 선택 조합 실행
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* PCA 추천 결과들 */}
+                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                      {pcaSuggestions.map((suggestion, idx) => (
+                        <div key={idx} className="p-3 rounded-md bg-white border">
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-sm font-medium" style={{color: '#0357AF'}}>
+                                  추천 조합 #{idx + 1}
+                                </span>
+                                <span className="text-xs px-2 py-0.5 rounded-full text-white"
+                                      style={{backgroundColor: '#0180CC'}}>
+                                  신뢰도: {(suggestion.confidence * 100).toFixed(0)}%
+                                </span>
+                              </div>
+                              
+                              {/* 변수별 체크박스 */}
+                              <div className="flex flex-wrap gap-2 mb-2">
+                                {suggestion.variables.map((variable: string) => (
+                                  <label key={variable} className="flex items-center gap-1 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedVariables.has(variable)}
+                                      onChange={() => toggleVariableSelection(variable)}
+                                      className="w-3 h-3 rounded"
+                                      style={{accentColor: '#0357AF'}}
+                                    />
+                                    <span className="text-xs font-medium" style={{color: '#0180CC'}}>
+                                      {variable}
+                                    </span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="flex flex-col gap-1">
+                              <button
+                                onClick={() => selectAllFromSuggestion(suggestion.variables)}
+                                className="text-xs px-2 py-1 rounded-md transition-all"
+                                style={{
+                                  backgroundColor: '#9BE8F0',
+                                  color: '#0357AF'
+                                }}
+                                title="이 추천의 모든 변수 선택"
+                              >
+                                📌 전체선택
+                              </button>
+                              <button
+                                onClick={() => runPCAAnalysis(suggestion.variables)}
+                                disabled={isScanning}
+                                className="text-xs px-2 py-1 rounded-md text-white font-medium transition-all"
+                                style={{
+                                  backgroundColor: isScanning ? '#9CA3AF' : '#E4815A',
+                                  cursor: isScanning ? 'not-allowed' : 'pointer'
+                                }}
+                                title="이 조합으로 즉시 분석 실행"
+                              >
+                                🚀 즉시 실행
+                              </button>
+                            </div>
+                          </div>
+
+                          <p className="text-xs mb-1" style={{color: '#0180CC'}}>
+                            {suggestion.reason}
+                          </p>
+                          
+                          {suggestion.varianceExplained && (
+                            <div className="text-xs" style={{color: '#666'}}>
+                              설명력: PC1({suggestion.varianceExplained[0]?.toFixed(1)}%), 
+                              PC2({suggestion.varianceExplained[1]?.toFixed(1)}%)
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
