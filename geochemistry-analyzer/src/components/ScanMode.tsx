@@ -48,6 +48,20 @@ export default function ScanMode({
     sampleDescription: '',
     aiRecommendationsOnly: false
   })
+
+  // 로컬 스토리지에서 API 키 로드
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const openaiKey = localStorage.getItem('geochemistry_openai_key') || ''
+      const googleKey = localStorage.getItem('geochemistry_google_key') || ''
+      
+      setScanOptions(prev => ({
+        ...prev,
+        openaiApiKey: openaiKey,
+        googleApiKey: googleKey
+      }))
+    }
+  }, [])
   
   // AI 관련 상태
   const [aiRecommendations, setAiRecommendations] = useState<AIRecommendation[]>([])
@@ -464,22 +478,40 @@ export default function ScanMode({
                   <Key className="h-4 w-4 inline mr-1" />
                   {scanOptions.aiProvider === 'openai' ? 'OpenAI API 키' : 'Google AI API 키'}
                 </label>
-                <input
-                  type="password"
-                  placeholder={scanOptions.aiProvider === 'openai' ? 'sk-...' : 'AIza...'}
-                  value={scanOptions.aiProvider === 'openai' ? scanOptions.openaiApiKey || '' : scanOptions.googleApiKey || ''}
-                  onChange={(e) => setScanOptions({
-                    ...scanOptions,
-                    [scanOptions.aiProvider === 'openai' ? 'openaiApiKey' : 'googleApiKey']: e.target.value
-                  })}
-                  className="w-full p-2 border border-gray-300 rounded-md text-sm"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  {scanOptions.aiProvider === 'openai' 
-                    ? 'OpenAI API 키가 필요합니다. platform.openai.com에서 발급받으세요.'
-                    : 'Google AI Studio에서 발급받은 API 키가 필요합니다. aistudio.google.com'
-                  }
-                </p>
+                                  <input
+                    type="password"
+                    placeholder={scanOptions.aiProvider === 'openai' ? 'sk-...' : 'AIza...'}
+                    value={scanOptions.aiProvider === 'openai' ? scanOptions.openaiApiKey || '' : scanOptions.googleApiKey || ''}
+                    onChange={(e) => {
+                      const newKey = e.target.value
+                      const keyName = scanOptions.aiProvider === 'openai' ? 'openaiApiKey' : 'googleApiKey'
+                      const storageKey = scanOptions.aiProvider === 'openai' ? 'geochemistry_openai_key' : 'geochemistry_google_key'
+                      
+                      // 로컬 스토리지에 저장
+                      if (newKey) {
+                        localStorage.setItem(storageKey, newKey)
+                      } else {
+                        localStorage.removeItem(storageKey)
+                      }
+                      
+                      setScanOptions({
+                        ...scanOptions,
+                        [keyName]: newKey
+                      })
+                    }}
+                    className="w-full p-2 border border-gray-300 rounded-md text-sm"
+                  />
+                                  <div className="text-xs text-gray-500 mt-1">
+                    <p>
+                      {scanOptions.aiProvider === 'openai' 
+                        ? 'OpenAI API 키가 필요합니다. platform.openai.com에서 발급받으세요.'
+                        : 'Google AI Studio에서 발급받은 API 키가 필요합니다. aistudio.google.com'
+                      }
+                    </p>
+                    <p className="text-green-600 mt-1">
+                      🔒 API 키는 브라우저에만 저장되며 서버로 전송되지 않습니다.
+                    </p>
+                  </div>
               </div>
 
               {/* 샘플 설명 */}
