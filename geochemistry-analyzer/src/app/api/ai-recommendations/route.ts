@@ -197,17 +197,28 @@ Please recommend ${maxRecommendations} variable pairs that would show geochemica
   })
 
   if (!response.ok) {
-    throw new Error(`Google AI API error: ${response.status}`)
+    const errorText = await response.text()
+    console.error('Google AI API Error:', response.status, errorText)
+    throw new Error(`Google AI API error: ${response.status} - ${errorText}`)
   }
 
   const data = await response.json()
+  console.log('Google AI Response:', JSON.stringify(data, null, 2))
+  
+  // Google AI 응답 구조 확인
+  if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+    console.error('Unexpected Google AI response structure:', data)
+    throw new Error('Invalid Google AI response structure')
+  }
+  
   const content = data.candidates[0].content.parts[0].text
 
   try {
     const parsed = JSON.parse(content)
     return parsed.recommendations || []
-  } catch {
+  } catch (error) {
     console.error('Failed to parse Google AI response:', content)
+    console.error('Parse error:', error)
     return []
   }
 }
