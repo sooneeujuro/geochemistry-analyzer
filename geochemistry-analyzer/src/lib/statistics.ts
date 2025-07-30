@@ -1,5 +1,5 @@
 import * as ss from 'simple-statistics'
-import { StatisticalResult, PCAResult } from '@/types/geochem'
+import { StatisticalResult, PCAResult, PCASuggestion } from '@/types/geochem'
 
 // PCA-js import (타입 선언)
 const PCA = require('pca-js')
@@ -189,15 +189,6 @@ export interface AdvancedStatistics {
   }
 }
 
-export interface PCASuggestion {
-  variables: string[]
-  eigenvalues: number[]
-  varianceExplained: number[]
-  cumulativeVariance: number[]
-  reason: string
-  confidence: number
-}
-
 export interface RegressionAnalysis {
   model: 'linear' | 'polynomial' | 'multiple'
   coefficients: number[]
@@ -279,102 +270,108 @@ export function calculateCorrelationMatrix(data: Record<string, number[]>): Reco
 
 // PCA 추천 로직
 export function suggestPCAVariables(
-  correlationMatrix: Record<string, Record<string, number>>,
-  variables: string[],
-  threshold: number = 0.3
+  correlationMatrix: number[][],
+  variableNames: string[],
+  threshold: number = 0.6
 ): PCASuggestion[] {
   const suggestions: PCASuggestion[] = []
   
-  // 강한 상관관계를 가진 변수들 그룹 찾기
-  const variableGroups: string[][] = []
-  const processed = new Set<string>()
+  // 상관관계가 높은 변수 그룹 찾기
+  const groups: string[][] = []
+  const used = new Set<string>()
   
-  variables.forEach(var1 => {
-    if (processed.has(var1)) return
+  for (let i = 0; i < variableNames.length; i++) {
+    if (used.has(variableNames[i])) continue
     
-    const group = [var1]
-    variables.forEach(var2 => {
-      if (var1 !== var2 && !processed.has(var2)) {
-        const corr = Math.abs(correlationMatrix[var1]?.[var2] || 0)
-        if (corr >= threshold) {
-          group.push(var2)
-          processed.add(var2)
-        }
+    const group = [variableNames[i]]
+    used.add(variableNames[i])
+    
+    for (let j = i + 1; j < variableNames.length; j++) {
+      if (used.has(variableNames[j])) continue
+      
+      // 그룹 내 모든 변수와의 평균 상관계수 계산
+      let totalCorr = 0
+      let count = 0
+      
+      for (const groupVar of group) {
+        const groupIdx = variableNames.indexOf(groupVar)
+        totalCorr += Math.abs(correlationMatrix[groupIdx][j])
+        count++
       }
+      
+      const avgCorr = totalCorr / count
+      if (avgCorr >= threshold) {
+        group.push(variableNames[j])
+        used.add(variableNames[j])
+      }
+    }
+    
+    if (group.length >= 3) { // 최소 3개 변수 이상인 그룹만
+      groups.push(group)
+    }
+  }
+  
+  // 각 그룹에 대해 PCA 추천 생성 (개선된 로직)
+  groups.forEach((group, index) => {
+    // 그룹 내에서 가장 대표적인 변수들 선정 (최대 6개)
+    const sortedByVariance = group.sort((a, b) => {
+      const aIdx = variableNames.indexOf(a)
+      const bIdx = variableNames.indexOf(b)
+      
+      // 다른 변수들과의 평균 상관계수로 정렬 (높은 순)
+      const aAvgCorr = correlationMatrix[aIdx].reduce((sum, corr, idx) => {
+        if (idx !== aIdx && group.includes(variableNames[idx])) {
+          return sum + Math.abs(corr)
+        }
+        return sum
+      }, 0) / (group.length - 1)
+      
+      const bAvgCorr = correlationMatrix[bIdx].reduce((sum, corr, idx) => {
+        if (idx !== bIdx && group.includes(variableNames[idx])) {
+          return sum + Math.abs(corr)
+        }
+        return sum
+      }, 0) / (group.length - 1)
+      
+      return bAvgCorr - aAvgCorr
     })
     
-    if (group.length >= 3) { // PCA는 최소 3개 변수 이상
-      variableGroups.push(group)
-      group.forEach(v => processed.add(v))
-    }
-  })
-  
-  // 각 그룹에 대한 PCA 추천
-  variableGroups.forEach((group, index) => {
-    // 간단한 고유값 추정 (실제로는 더 복잡한 계산 필요)
-    const avgCorrelation = group.reduce((sum, var1) => {
-      return sum + group.reduce((innerSum, var2) => {
-        return innerSum + (var1 !== var2 ? Math.abs(correlationMatrix[var1]?.[var2] || 0) : 0)
+    const selectedVariables = sortedByVariance.slice(0, 6) // 최대 6개
+    
+    // 가상 PCA 검증: 최소 2개 컴포넌트가 의미있는지 확인
+    const avgCorrelation = selectedVariables.reduce((sum, var1, i) => {
+      return sum + selectedVariables.slice(i + 1).reduce((innerSum, var2) => {
+        const idx1 = variableNames.indexOf(var1)
+        const idx2 = variableNames.indexOf(var2)
+        return innerSum + Math.abs(correlationMatrix[idx1][idx2])
       }, 0)
-    }, 0) / (group.length * (group.length - 1))
+    }, 0) / (selectedVariables.length * (selectedVariables.length - 1) / 2)
     
-    const estimatedVariance = [
-      avgCorrelation * group.length * 0.4,
-      avgCorrelation * group.length * 0.3,
-      avgCorrelation * group.length * 0.2
-    ]
+    // 상관관계 강도에 따른 예상 분산 설명력 추정
+    const estimatedPC1Variance = Math.min(avgCorrelation * 60 + 30, 85) // 30-85% 범위
+    const estimatedPC2Variance = Math.max(20 - avgCorrelation * 10, 8) // 8-20% 범위
     
-    const totalVariance = estimatedVariance.reduce((a, b) => a + b, 0)
-    const varianceExplained = estimatedVariance.map(v => (v / totalVariance) * 100)
-    const cumulativeVariance = varianceExplained.reduce((acc, curr, idx) => {
-      acc.push(idx === 0 ? curr : acc[idx - 1] + curr)
-      return acc
-    }, [] as number[])
-    
-    suggestions.push({
-      variables: group,
-      eigenvalues: estimatedVariance,
-      varianceExplained,
-      cumulativeVariance,
-      reason: `강한 상관관계 그룹 ${index + 1}: 평균 상관계수 ${avgCorrelation.toFixed(3)}`,
-      confidence: Math.min(avgCorrelation * 2, 0.95)
-    })
-  })
-  
-  // 지구화학적으로 의미있는 조합 추가
-  const geochemGroups = [
-    {
-      pattern: ['SiO2', 'Al2O3', 'K2O', 'Na2O'],
-      name: '규산염 주성분',
-      reason: '화성암 분화과정 분석에 적합'
-    },
-    {
-      pattern: ['La', 'Ce', 'Pr', 'Nd', 'Sm', 'Eu'],
-      name: '경희토류 원소',
-      reason: 'REE 패턴 및 광물학적 과정 분석'
-    },
-    {
-      pattern: ['MgO', 'FeO', 'Cr', 'Ni'],
-      name: '고철질 지시자',
-      reason: '맨틀 기원 및 분화도 분석'
-    }
-  ]
-  
-  geochemGroups.forEach(({ pattern, name, reason }) => {
-    const availableVars = pattern.filter(v => variables.includes(v))
-    if (availableVars.length >= 3) {
+    // PC2가 의미있는 분산을 설명할 수 있는 경우만 추천
+    if (estimatedPC2Variance >= 10) {
+      const varianceExplained = estimatedPC1Variance + estimatedPC2Variance
+      
       suggestions.push({
-        variables: availableVars,
-        eigenvalues: [2.1, 1.3, 0.8],
-        varianceExplained: [52.5, 32.5, 20.0],
-        cumulativeVariance: [52.5, 85.0, 100.0],
-        reason: `${name}: ${reason}`,
-        confidence: 0.85
+        variables: selectedVariables,
+        reason: `${selectedVariables.length}개 변수가 높은 상관관계 (평균 r=${avgCorrelation.toFixed(2)})를 보임. PC1은 ${estimatedPC1Variance.toFixed(0)}%, PC2는 ${estimatedPC2Variance.toFixed(0)}%의 분산 설명 예상.`,
+        expectedVariance: varianceExplained,
+        correlation: avgCorrelation
       })
     }
   })
   
-  return suggestions.sort((a, b) => b.confidence - a.confidence)
+  // 분산 설명력과 상관계수를 종합한 점수로 정렬
+  suggestions.sort((a, b) => {
+    const scoreA = a.expectedVariance * 0.7 + a.correlation * 30
+    const scoreB = b.expectedVariance * 0.7 + b.correlation * 30
+    return scoreB - scoreA
+  })
+  
+  return suggestions.slice(0, 3) // 상위 3개만 반환
 }
 
 // PCA 계산 함수 (pca-js 사용)

@@ -111,4 +111,11 @@ export interface PCAResult {
   variableNames: string[]  // Names of original variables
   nComponents: number  // Number of components
   clusters: number[]  // Cluster assignments for each observation
+}
+
+export interface PCASuggestion {
+  variables: string[]
+  reason: string
+  expectedVariance: number
+  correlation: number
 } 

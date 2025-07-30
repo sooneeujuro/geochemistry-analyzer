@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { calculateCorrelationMatrix, suggestPCAVariables, calculateDescriptiveStats, PCASuggestion } from '@/lib/statistics'
+import { calculateCorrelationMatrix, suggestPCAVariables, calculateDescriptiveStats } from '@/lib/statistics'
+import { PCASuggestion } from '@/types/geochem'
 
 interface StatisticalAnalysisRequest {
   data: Record<string, number[]>
@@ -64,8 +65,13 @@ async function handlePCASuggestion(
     // 상관관계 매트릭스 계산
     const correlationMatrix = calculateCorrelationMatrix(data)
     
-    // PCA 추천 생성
-    const pcaSuggestions = suggestPCAVariables(correlationMatrix, variables, 0.3)
+    // 상관관계 매트릭스를 2D 배열로 변환
+    const matrixArray: number[][] = variables.map(var1 => 
+      variables.map(var2 => correlationMatrix[var1]?.[var2] || 0)
+    )
+    
+    // PCA 추천 생성 (개선된 로직)
+    const pcaSuggestions = suggestPCAVariables(matrixArray, variables, 0.6)
     
     // 지구화학 도메인 지식 기반 fallback 추천들
     if (pcaSuggestions.length < 3) {
@@ -200,11 +206,9 @@ function getGeochemicalFallbacks(variables: string[]): PCASuggestion[] {
   if (majorElements.length >= 3) {
     fallbacks.push({
       variables: majorElements.slice(0, 4),
-      eigenvalues: [2.8, 1.5, 0.9, 0.8],
-      varianceExplained: [45.0, 30.0, 15.0, 10.0],
-      cumulativeVariance: [45.0, 75.0, 90.0, 100.0],
-      reason: '주요원소 조성 변화 - 암석학적 진화 과정 추적',
-      confidence: 0.8
+      reason: '주요원소 조성 변화 - 암석학적 진화 과정 추적 (PC1: ~60%, PC2: ~20% 예상)',
+      expectedVariance: 80.0,
+      correlation: 0.65
     })
   }
   
@@ -218,15 +222,13 @@ function getGeochemicalFallbacks(variables: string[]): PCASuggestion[] {
   if (traceElements.length >= 3) {
     fallbacks.push({
       variables: traceElements.slice(0, 3),
-      eigenvalues: [1.9, 1.1, 0.6],
-      varianceExplained: [55.0, 30.0, 15.0],
-      cumulativeVariance: [55.0, 85.0, 100.0],
-      reason: '미량원소 거동 - 마그마 진화 및 광물학적 제어 해석',
-      confidence: 0.85
+      reason: '미량원소 거동 - 마그마 진화 및 광물학적 제어 해석 (PC1: ~55%, PC2: ~25% 예상)',
+      expectedVariance: 80.0,
+      correlation: 0.70
     })
   }
   
-  // REE 조합
+  // 희토류 원소 조합
   const reeElements = variables.filter(v => 
     ['La', 'Ce', 'Pr', 'Nd', 'Sm', 'Eu', 'Gd', 'Tb', 'Dy', 'Ho', 'Er', 'Tm', 'Yb', 'Lu'].some(el => 
       v.includes(el)
@@ -236,15 +238,13 @@ function getGeochemicalFallbacks(variables: string[]): PCASuggestion[] {
   if (reeElements.length >= 3) {
     fallbacks.push({
       variables: reeElements.slice(0, 4),
-      eigenvalues: [2.5, 1.2, 0.7, 0.6],
-      varianceExplained: [50.0, 25.0, 15.0, 10.0],
-      cumulativeVariance: [50.0, 75.0, 90.0, 100.0],
-      reason: '희토류원소 패턴 - 부분용융 및 분별결정 과정 해석',
-      confidence: 0.9
+      reason: '희토류 원소 패턴 - 광물 분별결정 및 지각진화 분석 (PC1: ~70%, PC2: ~15% 예상)',
+      expectedVariance: 85.0,
+      correlation: 0.80
     })
   }
   
-  return fallbacks.slice(0, 3)
+  return fallbacks.slice(0, 2) // 최대 2개 fallback만 반환
 }
 
 // OpenAI API를 통한 PCA 추천

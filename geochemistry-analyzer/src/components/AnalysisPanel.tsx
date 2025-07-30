@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { GeochemData, StatisticalResult, ColumnSelection } from '@/types/geochem'
 import { calculateStatistics } from '@/lib/statistics'
 import ScatterPlot from './ScatterPlot'
+import PCAResultsTable from './PCAResultsTable'
 import { Activity, TrendingUp, BarChart } from 'lucide-react'
 
 interface AnalysisPanelProps {
@@ -119,6 +120,19 @@ export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelPr
                 clusterData={data.pcaResult?.clusters || []}
               />
             </div>
+
+            {/* PCA 결과 상세 표 (PCA 모드일 때만 표시) */}
+            {selectedColumns.x?.numerator === 'PC1' && 
+             selectedColumns.y?.numerator === 'PC2' && 
+             data.pcaResult && (
+              <div className="lg:col-span-2">
+                <PCAResultsTable
+                  pcaResult={data.pcaResult}
+                  data={data}
+                  selectedVariables={data.pcaResult.variableNames}
+                />
+              </div>
+            )}
 
             {/* 통계 결과 */}
             <div>
