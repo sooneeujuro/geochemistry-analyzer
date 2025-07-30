@@ -218,7 +218,7 @@ Please recommend ${maxRecommendations} variable pairs that would show geochemica
   }
 
   const data = await response.json()
-  console.log('Google AI Response:', JSON.stringify(data, null, 2))
+  console.log('Google AI Full Response:', JSON.stringify(data, null, 2))
   
   // Google AI 응답 구조 확인
   if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
@@ -227,13 +227,33 @@ Please recommend ${maxRecommendations} variable pairs that would show geochemica
   }
   
   const content = data.candidates[0].content.parts[0].text
+  console.log('Google AI Raw Content:', content)
 
   try {
+    // JSON 형식 검사 및 파싱
     const parsed = JSON.parse(content)
-    return parsed.recommendations || []
+    console.log('Google AI Parsed JSON:', JSON.stringify(parsed, null, 2))
+    
+    if (parsed.recommendations && Array.isArray(parsed.recommendations)) {
+      console.log('Found recommendations:', parsed.recommendations.length)
+      return parsed.recommendations
+    } else {
+      console.log('No recommendations array found in parsed response')
+      return []
+    }
   } catch (error) {
-    console.error('Failed to parse Google AI response:', content)
+    console.error('Failed to parse Google AI response as JSON:', content)
     console.error('Parse error:', error)
+    
+    // JSON 파싱 실패 시 간단한 형태로 변환 시도
+    console.log('Attempting to extract recommendations from text...')
+    
+    // 간단한 패턴 매칭으로 추천사항 추출 시도
+    const textContent = content.toLowerCase()
+    const lines = content.split('\n').filter((line: string) => line.trim())
+    
+    console.log('Content lines:', lines)
+    
     return []
   }
 }
