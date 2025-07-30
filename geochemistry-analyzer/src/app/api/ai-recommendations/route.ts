@@ -197,7 +197,7 @@ ${sampleDescription ? `Sample context: ${sampleDescription}` : ''}
 
 Please recommend ${maxRecommendations} variable pairs that would show geochemically significant correlations. Respond in JSON format with "recommendations" array containing objects with "xColumn", "yColumn", "reason", and "confidence" fields.`
 
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
