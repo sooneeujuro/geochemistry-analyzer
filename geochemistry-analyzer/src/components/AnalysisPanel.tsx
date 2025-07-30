@@ -124,10 +124,36 @@ export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelPr
       }
 
       const response = await generatePCAInterpretation(interpretationRequest)
-      setPcaInterpretation(response.interpretation)
+      
+      if (response && response.interpretation) {
+        setPcaInterpretation(response.interpretation)
+      } else {
+        throw new Error('Invalid response structure')
+      }
+      
     } catch (error) {
       console.error('PCA Interpretation Error:', error)
-      alert('PCA 해설 생성 중 오류가 발생했습니다. 나중에 다시 시도해주세요.')
+      
+      let errorMessage = 'PCA 해설 생성 중 오류가 발생했습니다.'
+      
+      if (error instanceof Error) {
+        if (error.message.includes('timeout') || error.message.includes('504')) {
+          errorMessage = '요청이 시간 초과되었습니다. 잠시 후 다시 시도해주세요.'
+        } else if (error.message.includes('network') || error.message.includes('fetch')) {
+          errorMessage = '네트워크 연결을 확인하고 다시 시도해주세요.'
+        } else if (error.message.includes('Unexpected token') || error.message.includes('JSON')) {
+          errorMessage = 'AI 서비스에서 예상치 못한 응답을 받았습니다. 잠시 후 다시 시도해주세요.'
+        } else if (error.message.includes('API key')) {
+          errorMessage = 'AI 서비스 설정에 문제가 있습니다. 관리자에게 문의해주세요.'
+        }
+      }
+      
+      // 사용자에게 친화적인 에러 메시지 표시
+      alert(`❌ ${errorMessage}\n\n💡 팁: 잠시 후 다시 시도하거나 페이지를 새로고침해보세요.`)
+      
+      // 에러 발생 시 모달을 닫지 않고 재시도 가능하도록 함
+      setShowInterpretation(false)
+      
     } finally {
       setIsLoadingInterpretation(false)
     }

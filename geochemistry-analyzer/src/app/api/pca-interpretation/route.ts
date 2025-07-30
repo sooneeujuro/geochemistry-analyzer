@@ -56,7 +56,10 @@ export async function POST(request: NextRequest) {
     // 입력 검증
     if (!pcaResult || !clusteringResult) {
       return NextResponse.json(
-        { error: 'PCA result and clustering result are required' },
+        { 
+          error: 'PCA result and clustering result are required',
+          success: false 
+        },
         { status: 400 }
       )
     }
@@ -67,51 +70,83 @@ export async function POST(request: NextRequest) {
 
     if (provider === 'openai' && !openaiKey) {
       return NextResponse.json(
-        { error: 'OpenAI API key not configured on server' },
+        { 
+          error: 'OpenAI API key not configured on server',
+          success: false 
+        },
         { status: 500 }
       )
     }
 
     if (provider === 'google' && !googleKey) {
       return NextResponse.json(
-        { error: 'Google AI API key not configured on server' },
+        { 
+          error: 'Google AI API key not configured on server',
+          success: false 
+        },
         { status: 500 }
       )
     }
 
     let interpretation: PCAInterpretation
 
-    if (provider === 'openai') {
-      interpretation = await getOpenAIInterpretation({
-        pcaResult,
-        clusteringResult,
-        statisticalTests,
-        sampleNames,
-        language,
-        apiKey: openaiKey!
+    try {
+      if (provider === 'openai') {
+        interpretation = await getOpenAIInterpretation({
+          pcaResult,
+          clusteringResult,
+          statisticalTests,
+          sampleNames,
+          language,
+          apiKey: openaiKey!
+        })
+      } else {
+        interpretation = await getGoogleAIInterpretation({
+          pcaResult,
+          clusteringResult,
+          statisticalTests,
+          sampleNames,
+          language,
+          apiKey: googleKey!
+        })
+      }
+
+      return NextResponse.json({
+        success: true,
+        interpretation,
+        timestamp: new Date().toISOString()
       })
-    } else {
-      interpretation = await getGoogleAIInterpretation({
-        pcaResult,
-        clusteringResult,
-        statisticalTests,
-        sampleNames,
-        language,
-        apiKey: googleKey!
+
+    } catch (apiError) {
+      console.error('AI API Error:', apiError)
+      
+      // API 호출 실패 시 폴백 해설 제공
+      const fallbackInterpretation: PCAInterpretation = {
+        korean: generateFallbackInterpretation(pcaResult, clusteringResult, statisticalTests, 'korean'),
+        english: generateFallbackInterpretation(pcaResult, clusteringResult, statisticalTests, 'english'),
+        metadata: {
+          provider: `${provider}-fallback`,
+          timestamp: new Date().toISOString(),
+          analysisType: 'comprehensive_pca_interpretation'
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        interpretation: fallbackInterpretation,
+        timestamp: new Date().toISOString(),
+        note: 'AI service unavailable, showing basic interpretation'
       })
     }
 
-    return NextResponse.json({
-      success: true,
-      interpretation,
-      timestamp: new Date().toISOString()
-    })
-
   } catch (error) {
-    console.error('PCA Interpretation API Error:', error instanceof Error ? error.message : 'Unknown error')
-    
+    console.error('PCA Interpretation API Error:', error)
     return NextResponse.json(
-      { error: 'PCA interpretation service temporarily unavailable' },
+      { 
+        error: 'Internal server error occurred',
+        success: false,
+        timestamp: new Date().toISOString()
+      },
       { status: 500 }
     )
   }
@@ -182,57 +217,84 @@ Please provide a detailed interpretation covering:
 ${language === 'both' || language === 'korean' ? 'Provide the interpretation in KOREAN first,' : ''}
 ${language === 'both' || language === 'english' ? `${language === 'both' ? ' then in ENGLISH.' : 'Provide the interpretation in ENGLISH.'}` : ''}
 
-Format your response as JSON:
+Format your response as valid JSON only:
 {
   ${language === 'both' || language === 'korean' ? '"korean": "한국어 해설...",\n  ' : ''}
   ${language === 'both' || language === 'english' ? '"english": "English interpretation..."' : ''}
 }`
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'gpt-4',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 2000,
-      temperature: 0.3,
-    }),
-  })
-
-  if (!response.ok) {
-    throw new Error(`OpenAI API error: ${response.status}`)
-  }
-
-  const data = await response.json()
-  const content = data.choices[0].message.content
+  // 타임아웃 설정 (60초)
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 60000)
 
   try {
-    const parsed = JSON.parse(content)
-    return {
-      korean: parsed.korean || '',
-      english: parsed.english || '',
-      metadata: {
-        provider: 'openai',
-        timestamp: new Date().toISOString(),
-        analysisType: 'comprehensive_pca_interpretation'
-      }
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 4000,
+        temperature: 0.3,
+      }),
+      signal: controller.signal
+    })
+
+    clearTimeout(timeoutId)
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`OpenAI API error: ${response.status} - ${errorText}`)
     }
-  } catch (parseError) {
-    console.error('Failed to parse OpenAI response:', content)
+
+    const data = await response.json()
     
-    // 파싱 실패 시 기본 해설 제공
-    return {
-      korean: generateFallbackInterpretation(pcaResult, clusteringResult, statisticalTests, 'korean'),
-      english: generateFallbackInterpretation(pcaResult, clusteringResult, statisticalTests, 'english'),
-      metadata: {
-        provider: 'openai-fallback',
-        timestamp: new Date().toISOString(),
-        analysisType: 'comprehensive_pca_interpretation'
+    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      throw new Error('Invalid OpenAI API response structure')
+    }
+    
+    const content = data.choices[0].message.content
+
+    try {
+      const parsed = JSON.parse(content)
+      return {
+        korean: parsed.korean || '',
+        english: parsed.english || '',
+        metadata: {
+          provider: 'openai',
+          timestamp: new Date().toISOString(),
+          analysisType: 'comprehensive_pca_interpretation'
+        }
+      }
+    } catch (parseError) {
+      console.error('Failed to parse OpenAI response:', content)
+      console.error('Parse error:', parseError)
+      
+      // JSON 파싱 실패 시, 원본 텍스트를 적절한 언어에 할당
+      const fallbackText = content || 'AI 해설 생성 중 오류가 발생했습니다.'
+      
+      return {
+        korean: language === 'korean' || language === 'both' ? fallbackText : '',
+        english: language === 'english' || language === 'both' ? fallbackText : '',
+        metadata: {
+          provider: 'openai-parsed',
+          timestamp: new Date().toISOString(),
+          analysisType: 'comprehensive_pca_interpretation'
+        }
       }
     }
+
+  } catch (error) {
+    clearTimeout(timeoutId)
+    
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('OpenAI API request timed out after 60 seconds')
+    }
+    
+    throw error
   }
 }
 

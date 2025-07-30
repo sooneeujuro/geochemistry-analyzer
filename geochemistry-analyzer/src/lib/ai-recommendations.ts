@@ -256,23 +256,81 @@ export async function generatePCAInterpretation(
   request: PCAInterpretationRequest
 ): Promise<PCAInterpretationResponse> {
   try {
+    // 타임아웃 설정 (90초 - 서버 타임아웃보다 여유있게)
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 90000)
+
     const response = await fetch('/api/pca-interpretation', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(request),
+      signal: controller.signal
     })
 
+    clearTimeout(timeoutId)
+
+    // 응답 상태 확인
     if (!response.ok) {
-      const errorData = await response.json()
-      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+      let errorMessage = `HTTP error! status: ${response.status}`
+      
+      try {
+        const errorData = await response.json()
+        errorMessage = errorData.error || errorMessage
+      } catch (parseError) {
+        // JSON 파싱 실패 시 응답 텍스트 확인
+        try {
+          const errorText = await response.text()
+          if (errorText.includes('504') || errorText.includes('Gateway')) {
+            throw new Error('504 Gateway Timeout - AI 서비스 응답 시간 초과')
+          } else if (errorText.includes('502') || errorText.includes('Bad Gateway')) {
+            throw new Error('502 Bad Gateway - AI 서비스 연결 실패')
+          } else {
+            errorMessage = errorText.slice(0, 100) // 에러 텍스트 일부만 포함
+          }
+        } catch (textError) {
+          // 텍스트도 읽을 수 없는 경우
+        }
+      }
+      
+      throw new Error(errorMessage)
     }
 
+    // 응답 데이터 파싱
     const data: PCAInterpretationResponse = await response.json()
+    
+    // 응답 구조 검증
+    if (!data || typeof data !== 'object') {
+      throw new Error('Invalid response structure - 응답 형식이 올바르지 않습니다')
+    }
+    
+    if (!data.interpretation) {
+      throw new Error('Missing interpretation data - 해설 데이터가 없습니다')
+    }
+    
     return data
+    
   } catch (error) {
     console.error('PCA Interpretation Error:', error)
+    
+    // 에러 타입별 처리
+    if (error instanceof Error) {
+      if (error.name === 'AbortError') {
+        throw new Error('timeout - 요청이 시간 초과되었습니다 (90초)')
+      } else if (error.message.includes('504') || error.message.includes('Gateway Timeout')) {
+        throw new Error('504 - AI 서비스 응답 시간 초과')
+      } else if (error.message.includes('502') || error.message.includes('Bad Gateway')) {
+        throw new Error('502 - AI 서비스 연결 실패')
+      } else if (error.message.includes('fetch')) {
+        throw new Error('network - 네트워크 연결 오류')
+      } else if (error.message.includes('JSON') || error.message.includes('Unexpected token')) {
+        throw new Error('JSON - 응답 파싱 오류')
+      } else if (error.message.includes('API key')) {
+        throw new Error('API key - AI 서비스 인증 오류')
+      }
+    }
+    
     throw error
   }
 }
