@@ -106,10 +106,14 @@ export default function Home() {
                   setMode('scan')
                   setCameFromScan(false)
                 }}
-                className="flex items-center px-4 py-2 text-sm bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors shadow-md"
+                className="flex items-center px-6 py-3 text-base font-medium rounded-lg transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
+                style={{
+                  backgroundColor: '#E4815A',
+                  color: 'white'
+                }}
               >
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                스캔 결과로 돌아가기
+                <ArrowLeft className="h-5 w-5 mr-2" />
+                📊 스캔 결과로 돌아가기
               </button>
             </div>
           )}

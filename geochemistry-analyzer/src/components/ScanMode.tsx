@@ -258,6 +258,14 @@ export default function ScanMode({
     // 약간의 딜레이 후 스캔 실행 (상태 업데이트 반영)
     setTimeout(() => {
       performScan()
+      
+      // 스캔 완료 후 결과 영역으로 자동 스크롤
+      setTimeout(() => {
+        const resultsSection = document.querySelector('[data-scan-results]')
+        if (resultsSection) {
+          resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+      }, 1000)
     }, 200)
   }
 
@@ -293,6 +301,14 @@ export default function ScanMode({
     // 약간의 딜레이 후 스캔 실행 (상태 업데이트 반영)
     setTimeout(() => {
       performScan()
+      
+      // 스캔 완료 후 결과 영역으로 자동 스크롤
+      setTimeout(() => {
+        const resultsSection = document.querySelector('[data-scan-results]')
+        if (resultsSection) {
+          resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+      }, 1000)
     }, 200)
   }
 
@@ -1012,9 +1028,16 @@ export default function ScanMode({
 
       {/* 스캔 결과 */}
       {!isScanning && scanResults.length > 0 && (
-        <div className="bg-white rounded-lg shadow-lg p-6">
+        <div data-scan-results className="bg-white rounded-lg shadow-lg p-6" style={{border: '3px solid #E4815A'}}>
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold text-gray-800">스캔 결과</h2>
+            <div>
+              <h2 className="text-xl font-semibold flex items-center" style={{color: '#0357AF'}}>
+                📊 스캔 결과
+              </h2>
+              <p className="text-sm mt-1" style={{color: '#E4815A'}}>
+                💡 <strong>결과 카드를 클릭</strong>하면 해당 조합의 <strong>그래프를 자유롭게 조작</strong>할 수 있어요!
+              </p>
+            </div>
             <div className="flex items-center gap-4">
               <button
                 onClick={() => setShowPDFReport(true)}

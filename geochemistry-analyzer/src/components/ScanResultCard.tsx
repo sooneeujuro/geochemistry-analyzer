@@ -66,11 +66,12 @@ export default function ScanResultCard({
   return (
     <div 
       onClick={() => onSelect(result.xColumn, result.yColumn)}
-      className={`bg-white border rounded-lg p-4 cursor-pointer transition-all hover:shadow-lg hover:border-blue-300 ${
+      className={`bg-white border rounded-lg p-4 cursor-pointer transition-all hover:shadow-lg hover:border-blue-300 hover:scale-105 ${
         result.isSignificant 
           ? 'border-green-300 bg-green-50' 
           : 'border-gray-200'
       } ${compact ? 'p-3' : 'p-4'}`}
+      title="클릭하면 이 조합의 그래프를 자유롭게 조작할 수 있습니다"
     >
       {/* 헤더 */}
       <div className="flex items-center justify-between mb-3">
@@ -158,6 +159,12 @@ export default function ScanResultCard({
           ✨ 유의미한 상관관계
         </div>
       )}
+      
+      {/* 클릭 안내 */}
+      <div className={`mt-2 text-center ${compact ? 'text-xs' : 'text-sm'}`} 
+           style={{color: '#E4815A', fontWeight: '500'}}>
+        🖱️ 클릭하여 그래프 조작하기
+      </div>
     </div>
   )
 } 
