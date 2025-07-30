@@ -142,8 +142,8 @@ export default function DataViewer({ data, selectedColumns, onColumnSelect }: Da
         </div>
 
         <div className="text-sm text-gray-600">
-          <p className="mb-1">파일: {data.metadata.fileName}</p>
-          <p>데이터: {data.metadata.rowCount}행 × {data.metadata.columnCount}열</p>
+          <p className="mb-1">파일: {data.metadata?.fileName || data.fileName}</p>
+          <p>데이터: {data.metadata?.rowCount || data.data.length}행 × {data.metadata?.columnCount || (data.data[0] ? Object.keys(data.data[0]).length : 0)}열</p>
         </div>
       </div>
 

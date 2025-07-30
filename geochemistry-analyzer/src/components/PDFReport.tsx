@@ -37,12 +37,12 @@ export default function PDFReport({
         <h1>Geochemical Analysis - Detailed Report</h1>
         <div class="metadata">
           <p><strong>Generated:</strong> ${new Date().toLocaleString()}</p>
-          <p><strong>Dataset:</strong> ${data.data.length} samples, ${data.columns.length} variables</p>
+          <p><strong>Dataset:</strong> ${data.data.length} samples, ${data.numericColumns.length + data.nonNumericColumns.length} variables</p>
           <p><strong>Analysis Type:</strong> Comprehensive correlation analysis</p>
         </div>
 
         <h2>Executive Summary</h2>
-        <p>This report presents a comprehensive geochemical correlation analysis of ${data.data.length} samples across ${data.columns.length} geochemical variables. The analysis identified ${significantResults.length} statistically significant correlations (p &lt; 0.05, |r| &gt; 0.5) out of ${scanResults.length} possible variable combinations.</p>
+        <p>This report presents a comprehensive geochemical correlation analysis of ${data.data.length} samples across ${data.numericColumns.length + data.nonNumericColumns.length} geochemical variables. The analysis identified ${significantResults.length} statistically significant correlations (p &lt; 0.05, |r| &gt; 0.5) out of ${scanResults.length} possible variable combinations.</p>
 
         ${scanSummary.aiRecommendationsUsed ? `
         <h2>AI-Enhanced Analysis</h2>

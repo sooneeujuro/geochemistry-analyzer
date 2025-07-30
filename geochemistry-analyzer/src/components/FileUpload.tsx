@@ -64,10 +64,14 @@ export default function FileUpload({ onDataLoad }: FileUploadProps) {
         }
       })
 
+      // 비수치형 컬럼 계산
+      const nonNumericColumns = columns.filter(col => !numericColumns.includes(col))
+
       const geochemData: GeochemData = {
         data: parsedData,
-        columns,
         numericColumns,
+        nonNumericColumns,
+        fileName: file.name,
         typeColumn,
         metadata: {
           fileName: file.name,

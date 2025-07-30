@@ -1,8 +1,8 @@
 import * as ss from 'simple-statistics'
 import { StatisticalResult, PCAResult, PCASuggestion } from '@/types/geochem'
 
-// PCA-js import (타입 선언)
-const PCA = require('pca-js')
+// ML-Matrix import (타입 선언 없음)
+const { Matrix, EVD } = require('ml-matrix')
 
 export function calculateStatistics(
   xData: number[],
@@ -347,19 +347,27 @@ export function suggestPCAVariables(
       }, 0)
     }, 0) / (selectedVariables.length * (selectedVariables.length - 1) / 2)
     
-    // 상관관계 강도에 따른 예상 분산 설명력 추정
-    const estimatedPC1Variance = Math.min(avgCorrelation * 60 + 30, 85) // 30-85% 범위
-    const estimatedPC2Variance = Math.max(20 - avgCorrelation * 10, 8) // 8-20% 범위
+    // 상관관계 강도에 따른 예상 분산 설명력 추정 (개선된 공식)
+    const estimatedPC1Variance = Math.min(avgCorrelation * 50 + 40, 80) // 40-80% 범위
+    const estimatedPC2Variance = Math.max(30 - avgCorrelation * 15, 10) // 10-30% 범위
     
-    // PC2가 의미있는 분산을 설명할 수 있는 경우만 추천
+    // PC2가 최소 10% 이상의 분산을 설명할 수 있는 경우만 추천
     if (estimatedPC2Variance >= 10) {
       const varianceExplained = estimatedPC1Variance + estimatedPC2Variance
+      
+      // 신뢰도 계산: 상관관계 강도, PC2 설명력, 변수 수의 균형을 고려
+      const correlationScore = Math.min(avgCorrelation, 1) // 0-1 범위
+      const pc2Score = Math.min(estimatedPC2Variance / 30, 1) // 30%를 만점으로 0-1 범위
+      const variableCountScore = Math.min((selectedVariables.length - 2) / 4, 1) // 2-6개 변수 범위에서 0-1
+      
+      const confidence = (correlationScore * 0.4 + pc2Score * 0.4 + variableCountScore * 0.2)
       
       suggestions.push({
         variables: selectedVariables,
         reason: `${selectedVariables.length}개 변수가 높은 상관관계 (평균 r=${avgCorrelation.toFixed(2)})를 보임. PC1은 ${estimatedPC1Variance.toFixed(0)}%, PC2는 ${estimatedPC2Variance.toFixed(0)}%의 분산 설명 예상.`,
         expectedVariance: varianceExplained,
-        correlation: avgCorrelation
+        correlation: avgCorrelation,
+        confidence: confidence
       })
     }
   })
@@ -483,21 +491,55 @@ ${variableValidCounts.map(v => `• ${v.variable}: ${v.validCount}/${v.totalCoun
       throw new Error('PCA를 수행하기에 변수가 부족합니다. (최소 2개 변수 필요)')
     }
     
-    // PCA 수행 (pca-js 사용)
-    const vectors = (PCA as any).getEigenVectors(cleanData)
+    // 데이터 표준화 (평균 0, 분산 1)
+    const means = new Array(variableNames.length).fill(0)
+    const stds = new Array(variableNames.length).fill(0)
     
-    // 컴포넌트 수 결정 (기본: 최대 변수 수와 2 중 작은 값)
+    // 평균 계산
+    for (let j = 0; j < variableNames.length; j++) {
+      means[j] = cleanData.reduce((sum, row) => sum + row[j], 0) / cleanData.length
+    }
+    
+    // 표준편차 계산
+    for (let j = 0; j < variableNames.length; j++) {
+      const variance = cleanData.reduce((sum, row) => sum + Math.pow(row[j] - means[j], 2), 0) / (cleanData.length - 1)
+      stds[j] = Math.sqrt(variance)
+    }
+    
+    // 데이터 표준화
+    const standardizedData = cleanData.map(row => 
+      row.map((val, j) => stds[j] > 0 ? (val - means[j]) / stds[j] : 0)
+    )
+    
+    // 공분산 행렬 계산 (표준화된 데이터에서는 상관관계 행렬과 동일)
+    const numVars = variableNames.length
+    const covMatrix = Array(numVars).fill(null).map(() => Array(numVars).fill(0))
+    
+    for (let i = 0; i < numVars; i++) {
+      for (let j = 0; j < numVars; j++) {
+        let sum = 0
+        for (let k = 0; k < standardizedData.length; k++) {
+          sum += standardizedData[k][i] * standardizedData[k][j]
+        }
+        covMatrix[i][j] = sum / (standardizedData.length - 1)
+      }
+    }
+    
+    // 고유값과 고유벡터 계산 (반복법 사용)
+    const eigenResults = computeTopEigenValues(covMatrix, Math.min(numVars, 6))
+    
+    // 컴포넌트 수 결정
     const maxComponents = Math.min(variableNames.length, cleanData.length - 1)
     const finalNComponents = nComponents ? Math.min(nComponents, maxComponents) : Math.min(maxComponents, 2)
     
-    // PCA 결과 추출
-    const selectedVectors = vectors.slice(0, finalNComponents)
-    const adjustedData = (PCA as any).computeAdjustedData(cleanData, ...selectedVectors)
+    // 상위 고유값/고유벡터 선택
+    const selectedEigenvalues = eigenResults.eigenvalues.slice(0, finalNComponents)
+    const selectedEigenvectors = eigenResults.eigenvectors.slice(0, finalNComponents)
     
     // 설명 분산 계산
-    const totalVariance = vectors.reduce((sum: number, v: any) => sum + v.eigenvalue, 0)
-    const explainedVariance = selectedVectors.map((v: any) => (v.eigenvalue / totalVariance) * 100)
-    const eigenvalues = selectedVectors.map((v: any) => v.eigenvalue)
+    const totalVariance = eigenResults.eigenvalues.reduce((sum: number, val: number) => sum + val, 0)
+    const explainedVariance = selectedEigenvalues.map((val: number) => (val / totalVariance) * 100)
+    const eigenvalues = selectedEigenvalues
     
     // 누적 설명 분산 계산
     const cumulativeVariance = explainedVariance.reduce((acc: number[], val: number, index: number) => {
@@ -505,15 +547,15 @@ ${variableValidCounts.map(v => `• ${v.variable}: ${v.validCount}/${v.totalCoun
       return acc
     }, [] as number[])
     
-    // PC 점수 (scores) 추출
-    const scores = adjustedData.adjustedData[0] ? 
-      cleanData.map((_: any, rowIndex: number) => 
-        selectedVectors.map((_: any, compIndex: number) => adjustedData.adjustedData[compIndex][rowIndex])
-      ) : 
-      cleanData.map(() => new Array(finalNComponents).fill(0))
+    // PC 점수 계산 (표준화된 데이터 × 고유벡터)
+    const scores = standardizedData.map(row => 
+      selectedEigenvectors.map((eigenvector: number[]) => 
+        row.reduce((sum, val, idx) => sum + val * eigenvector[idx], 0)
+      )
+    )
     
-    // 로딩 (변수별 기여도) 계산
-    const loadings = selectedVectors.map((vector: any) => vector.vector.slice(0, variableNames.length))
+    // 로딩 계산 (고유벡터 자체가 로딩)
+    const loadings = selectedEigenvectors
     
     // K-means 클러스터링 수행 (유효한 데이터만 사용)
     const k = findOptimalClusters(scores.map(row => row.slice(0, 2))) // 첫 두 컴포넌트만 사용
@@ -549,6 +591,85 @@ ${variableValidCounts.map(v => `• ${v.variable}: ${v.validCount}/${v.totalCoun
   } catch (error) {
     console.error('PCA calculation error:', error)
     throw new Error(`PCA 계산 중 오류가 발생했습니다: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+}
+
+// 상위 고유값과 고유벡터 계산 함수
+function computeTopEigenValues(matrix: number[][], numComponents: number): { eigenvalues: number[], eigenvectors: number[][] } {
+  const n = matrix.length
+  const eigenvalues: number[] = []
+  const eigenvectors: number[][] = []
+  
+  // 작업 행렬 복사
+  let workMatrix = matrix.map(row => [...row])
+  
+  for (let comp = 0; comp < numComponents; comp++) {
+    // 전력법으로 가장 큰 고유값과 고유벡터 찾기
+    let eigenvector = new Array(n).fill(0).map(() => Math.random() - 0.5) // 랜덤 초기 벡터
+    let eigenvalue = 0
+    
+    // 전력법 반복
+    for (let iter = 0; iter < 100; iter++) {
+      // A * v
+      const newVector = new Array(n).fill(0)
+      for (let i = 0; i < n; i++) {
+        for (let j = 0; j < n; j++) {
+          newVector[i] += workMatrix[i][j] * eigenvector[j]
+        }
+      }
+      
+      // 크기 계산
+      const norm = Math.sqrt(newVector.reduce((sum, val) => sum + val * val, 0))
+      if (norm < 1e-10) break
+      
+      // 정규화
+      eigenvector = newVector.map(val => val / norm)
+      
+      // 고유값 계산 (Rayleigh quotient)
+      let numerator = 0
+      let denominator = 0
+      for (let i = 0; i < n; i++) {
+        let temp = 0
+        for (let j = 0; j < n; j++) {
+          temp += workMatrix[i][j] * eigenvector[j]
+        }
+        numerator += eigenvector[i] * temp
+        denominator += eigenvector[i] * eigenvector[i]
+      }
+      
+      const newEigenvalue = numerator / denominator
+      
+      // 수렴 체크
+      if (Math.abs(newEigenvalue - eigenvalue) < 1e-8) break
+      eigenvalue = newEigenvalue
+    }
+    
+    // 고유값이 충분히 큰 경우만 저장
+    if (Math.abs(eigenvalue) > 1e-10) {
+      eigenvalues.push(Math.abs(eigenvalue))
+      eigenvectors.push([...eigenvector])
+      
+      // 찾은 고유벡터의 영향을 제거 (디플레이션)
+      for (let i = 0; i < n; i++) {
+        for (let j = 0; j < n; j++) {
+          workMatrix[i][j] -= eigenvalue * eigenvector[i] * eigenvector[j]
+        }
+      }
+    }
+  }
+  
+  // 고유값 크기순으로 정렬
+  const sortedIndices = eigenvalues
+    .map((val, idx) => ({ val, idx }))
+    .sort((a, b) => b.val - a.val)
+    .map(item => item.idx)
+  
+  const sortedEigenvalues = sortedIndices.map(idx => eigenvalues[idx])
+  const sortedEigenvectors = sortedIndices.map(idx => eigenvectors[idx])
+  
+  return {
+    eigenvalues: sortedEigenvalues,
+    eigenvectors: sortedEigenvectors
   }
 } 
 
@@ -638,54 +759,255 @@ function kMeansClustering(data: number[][], k: number, maxIterations: number = 1
   return clusters
 }
 
-// 최적 클러스터 수 결정 (엘보우 방법)
-function findOptimalClusters(data: number[][], maxK: number = 6): number {
-  if (data.length < 4) return 2
+// Silhouette 스코어 계산 (간단한 구현)
+function calculateSilhouetteScore(data: number[][], clusters: number[]): number {
+  const n = data.length
+  const k = Math.max(...clusters) + 1
+  let totalSilhouette = 0
   
-  // 데이터가 적으면 클러스터 수를 제한
-  const actualMaxK = Math.min(maxK, Math.floor(data.length / 2), 4)
+  for (let i = 0; i < n; i++) {
+    const clusterI = clusters[i]
+    
+    // a(i): 같은 클러스터 내 평균 거리
+    const sameCluster = data.filter((_, idx) => clusters[idx] === clusterI && idx !== i)
+    const aI = sameCluster.length > 0 ? 
+      sameCluster.reduce((sum, point) => sum + euclideanDistance(data[i], point), 0) / sameCluster.length : 0
+    
+    // b(i): 가장 가까운 다른 클러스터까지의 평균 거리
+    let minBI = Infinity
+    for (let c = 0; c < k; c++) {
+      if (c !== clusterI) {
+        const otherCluster = data.filter((_, idx) => clusters[idx] === c)
+        if (otherCluster.length > 0) {
+          const avgDist = otherCluster.reduce((sum, point) => sum + euclideanDistance(data[i], point), 0) / otherCluster.length
+          minBI = Math.min(minBI, avgDist)
+        }
+      }
+    }
+    
+    const bI = minBI === Infinity ? 0 : minBI
+    const silhouette = aI === 0 && bI === 0 ? 0 : (bI - aI) / Math.max(aI, bI)
+    totalSilhouette += silhouette
+  }
+  
+  return totalSilhouette / n
+}
+
+// 유클리드 거리 계산
+function euclideanDistance(point1: number[], point2: number[]): number {
+  return Math.sqrt(point1.reduce((sum, val, idx) => sum + Math.pow(val - point2[idx], 2), 0))
+}
+
+// 개선된 최적 클러스터 수 결정 (Silhouette + Elbow 방법)
+function findOptimalClusters(data: number[][], maxK: number = 8): number {
+  if (data.length < 6) return 3 // 기본값을 3으로 변경
+  
+  // 데이터 크기에 따른 최대 클러스터 수 결정 (제한 완화)
+  const actualMaxK = Math.min(maxK, Math.floor(data.length / 2), 6) // 최대 6개
   
   const wcss: number[] = []
+  const silhouetteScores: number[] = []
   
-  for (let k = 1; k <= actualMaxK; k++) {
+  console.log('🔍 클러스터 최적화 시작:', {
+    data_points: data.length,
+    dimensions: data[0]?.length || 0,
+    max_k: actualMaxK
+  })
+  
+  for (let k = 2; k <= actualMaxK; k++) {
     const clusters = kMeansClustering(data, k)
-    let totalWCSS = 0
     
-    // 각 클러스터의 WCSS 계산
+    // WCSS 계산
+    let totalWCSS = 0
     for (let cluster = 0; cluster < k; cluster++) {
       const clusterPoints = data.filter((_, index) => clusters[index] === cluster)
       if (clusterPoints.length === 0) continue
       
-      // 클러스터 중심점 계산
-      const centroidX = clusterPoints.reduce((sum, point) => sum + point[0], 0) / clusterPoints.length
-      const centroidY = clusterPoints.reduce((sum, point) => sum + point[1], 0) / clusterPoints.length
+      const centroid = clusterPoints[0].map((_, dim) => 
+        clusterPoints.reduce((sum, point) => sum + point[dim], 0) / clusterPoints.length
+      )
       
-      // 클러스터 내 거리 제곱합
       const clusterWCSS = clusterPoints.reduce((sum, point) => {
-        return sum + Math.pow(point[0] - centroidX, 2) + Math.pow(point[1] - centroidY, 2)
+        return sum + point.reduce((distSum, val, dim) => distSum + Math.pow(val - centroid[dim], 2), 0)
       }, 0)
       
       totalWCSS += clusterWCSS
     }
-    
     wcss.push(totalWCSS)
+    
+    // Silhouette 스코어 계산
+    const silScore = calculateSilhouetteScore(data, clusters)
+    silhouetteScores.push(silScore)
   }
   
-  // 엘보우 포인트 찾기 (개선된 방법)
-  let optimalK = 2
-  if (wcss.length > 2) {
-    let maxImprovement = 0
-    for (let i = 1; i < wcss.length - 1; i++) {
-      const improvement = wcss[i - 1] - wcss[i]
-      const nextImprovement = wcss[i] - wcss[i + 1]
-      
-      // 개선 정도가 급격히 감소하는 지점 찾기
-      if (improvement > nextImprovement * 1.5 && improvement > maxImprovement) {
-        maxImprovement = improvement
-        optimalK = i + 1
-      }
+  // 최적 k 결정: Silhouette 스코어 우선, 그 다음 Elbow
+  let bestK = 3 // 기본값을 3으로 설정
+  let maxSilhouette = -1
+  
+  // Silhouette 스코어 기반 최적화
+  for (let i = 0; i < silhouetteScores.length; i++) {
+    const k = i + 2
+    const silScore = silhouetteScores[i]
+    
+    // Silhouette 스코어가 좋고, 3개 이상의 클러스터를 선호
+    if (silScore > maxSilhouette && silScore >= 0.15) { // 기준 완화
+      maxSilhouette = silScore
+      bestK = k
     }
   }
   
-  return Math.max(2, Math.min(optimalK, actualMaxK))
+  // 3개 클러스터 선호하는 로직 추가
+  if (silhouetteScores.length >= 2) { // k=3이 가능한 경우
+    const k3Score = silhouetteScores[1] // k=3의 스코어
+    const k2Score = silhouetteScores[0] // k=2의 스코어
+    
+    // k=3이 k=2보다 조금이라도 좋거나, 거의 비슷하면 k=3 선택
+    if (k3Score >= k2Score - 0.05) { // 0.05 차이까지는 k=3 선호
+      bestK = 3
+      maxSilhouette = k3Score
+    }
+  }
+  
+  console.log('🎯 클러스터 최적화 결과:', {
+    wcss: wcss.map(w => w.toFixed(0)),
+    silhouette: silhouetteScores.map(s => s.toFixed(3)),
+    optimal_k: bestK,
+    max_silhouette: maxSilhouette.toFixed(3),
+    reasoning: bestK === 3 ? '3개 클러스터가 가장 자연스러운 분리를 제공' : `${bestK}개 클러스터가 최적`
+  })
+  
+  return Math.max(2, Math.min(bestK, actualMaxK))
+}
+
+// PCA 계산 함수 (sklearn.decomposition.PCA와 동일한 방식)
+export async function calculatePCA(
+  data: number[][],
+  variableNames: string[],
+  nComponents?: number
+): Promise<PCAResult> {
+  try {
+    if (!data || data.length === 0) {
+      throw new Error('PCA를 위한 데이터가 없습니다.')
+    }
+
+    // 데이터 검증 및 정리
+    const cleanData = data.filter(row => 
+      row.every(val => !isNaN(val) && isFinite(val))
+    )
+
+    if (cleanData.length < 3) {
+      throw new Error('PCA 계산을 위해 최소 3개의 유효한 샘플이 필요합니다.')
+    }
+
+    const numVars = variableNames.length
+    const numSamples = cleanData.length
+
+    if (numSamples <= numVars) {
+      throw new Error('샘플 수가 변수 수보다 많아야 합니다.')
+    }
+
+    console.log('🔍 PCA 시작:', {
+      samples: numSamples,
+      variables: numVars,
+      variableNames
+    })
+
+    // 1. 데이터 표준화 (sklearn StandardScaler와 동일한 방식)
+    const means = new Array(numVars).fill(0)
+    const stds = new Array(numVars).fill(0)
+    
+    // 평균 계산
+    for (let j = 0; j < numVars; j++) {
+      means[j] = cleanData.reduce((sum, row) => sum + row[j], 0) / numSamples
+    }
+    
+    // 표준편차 계산 (Bessel's correction: n-1)
+    for (let j = 0; j < numVars; j++) {
+      const variance = cleanData.reduce((sum, row) => sum + Math.pow(row[j] - means[j], 2), 0) / (numSamples - 1)
+      stds[j] = Math.sqrt(variance)
+    }
+    
+    // 표준화된 데이터 생성
+    const standardizedData = cleanData.map(row =>
+      row.map((val, j) => stds[j] > 0 ? (val - means[j]) / stds[j] : 0)
+    )
+
+    console.log('📊 데이터 표준화 완료:', {
+      means: means.map(m => m.toFixed(3)),
+      stds: stds.map(s => s.toFixed(3))
+    })
+
+    // 2. ML-Matrix를 사용한 공분산 행렬 계산
+    const dataMatrix = new Matrix(standardizedData)
+    
+    // 공분산 행렬 = (X^T * X) / (n-1)
+    const covMatrix = dataMatrix.transpose().mmul(dataMatrix).div(numSamples - 1)
+    
+    console.log('🔢 공분산 행렬 계산 완료')
+
+    // 3. 고유값 분해 (EVD) 사용
+    const evd = new (EVD as any)(covMatrix)
+    const eigenvaluesRaw = (evd as any).realEigenvalues as number[]
+    const eigenvalues = [...eigenvaluesRaw].reverse() // 내림차순 정렬
+    const eigenvectorsRaw = (evd as any).eigenvectorMatrix.transpose().to2DArray() as number[][]
+    const eigenvectors = [...eigenvectorsRaw].reverse() // 고유벡터들
+
+    console.log('⚡ 고유값 분해 완료:', {
+      eigenvalues: eigenvalues.map((v: number) => v.toFixed(6)),
+      numEigenvectors: eigenvectors.length
+    })
+
+    // 컴포넌트 수 결정
+    const maxComponents = Math.min(variableNames.length, cleanData.length - 1)
+    const finalNComponents = nComponents ? Math.min(nComponents, maxComponents) : Math.min(maxComponents, 2)
+    
+    // 상위 고유값/고유벡터 선택
+    const selectedEigenvalues = eigenvalues.slice(0, finalNComponents)
+    const selectedEigenvectors = eigenvectors.slice(0, finalNComponents)
+    
+    // 4. 설명 분산 계산 (sklearn과 동일한 방식)
+    const totalVariance = eigenvalues.reduce((sum: number, val: number) => sum + Math.max(0, val), 0) // 음수 고유값 제거
+    const explainedVariance = selectedEigenvalues.map((val: number) => (Math.max(0, val) / totalVariance) * 100)
+    
+    // 누적 설명 분산 계산
+    const cumulativeVariance = explainedVariance.reduce((acc: number[], val: number, index: number) => {
+      acc.push((acc[index - 1] || 0) + val)
+      return acc
+    }, [])
+
+    // 5. PC 점수 계산 (표준화된 데이터 × 고유벡터)
+    const scores = standardizedData.map(sample => 
+      selectedEigenvectors.map((eigenvector: number[]) => 
+        sample.reduce((sum, val, i) => sum + val * eigenvector[i], 0)
+      )
+    )
+
+    // 6. 로딩 행렬 계산 (고유벡터 × sqrt(고유값))
+    const loadings = selectedEigenvectors.map((eigenvector: number[], compIndex: number) =>
+      eigenvector.map((loading: number) => loading * Math.sqrt(Math.max(0, selectedEigenvalues[compIndex])))
+    )
+
+    console.log('🎉 PCA 계산 완료:', {
+      samples: numSamples,
+      variables: numVars,
+      components: finalNComponents,
+      explainedVariance: explainedVariance.map((v: number) => v.toFixed(1) + '%'),
+      eigenvalues: selectedEigenvalues.map((v: number) => v.toFixed(6))
+    })
+
+    return {
+      scores,
+      loadings,
+      explainedVariance,
+      cumulativeVariance,
+      eigenvalues: selectedEigenvalues,
+      variableNames,
+      nComponents: finalNComponents,
+      clusters: [] // 클러스터링은 별도로 수행
+    }
+
+  } catch (error) {
+    console.error('PCA calculation error:', error)
+    throw new Error(`PCA 계산 중 오류가 발생했습니다: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
 } 

@@ -120,4 +120,5 @@ export interface PCASuggestion {
   reason: string
   expectedVariance: number
   correlation: number
+  confidence: number
 } 

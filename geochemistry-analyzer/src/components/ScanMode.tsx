@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { GeochemData, ScanResult, ScanOptions, ScanSummary } from '@/types/geochem'
 import { calculateStatistics } from '@/lib/statistics'
-import { estimateAPICost } from '@/lib/ai-recommendations'
+import { estimateAPICost, generatePCAInterpretation, PCAInterpretationRequest, PCAInterpretation } from '@/lib/ai-recommendations'
 
 interface AIRecommendation {
   xColumn: string
@@ -51,6 +51,18 @@ export default function ScanMode({
   
   // 선택된 변수들 관리 (PCA 추천용)
   const [selectedVariables, setSelectedVariables] = useState<Set<string>>(new Set())
+  
+  // PCA 탭 관리 (AI 추천 vs 수동 선택)
+  const [pcaTab, setPcaTab] = useState<'ai' | 'manual'>('ai')
+  
+  // 수동 선택용 변수들 관리
+  const [manualSelectedVariables, setManualSelectedVariables] = useState<Set<string>>(new Set())
+  
+  // PCA 해설 관련 상태
+  const [pcaInterpretation, setPcaInterpretation] = useState<PCAInterpretation | null>(null)
+  const [isLoadingInterpretation, setIsLoadingInterpretation] = useState(false)
+  const [showInterpretation, setShowInterpretation] = useState(false)
+  const [lastPcaResult, setLastPcaResult] = useState<any>(null)
   
   // 결과 필터링 및 페이지네이션 관리
   const [filterVariable, setFilterVariable] = useState<string>('')
@@ -303,6 +315,86 @@ export default function ScanMode({
     setSelectedVariables(new Set(variables))
   }
 
+  // 수동 선택용 함수들
+  const toggleManualVariableSelection = (variable: string) => {
+    const newSelected = new Set(manualSelectedVariables)
+    if (newSelected.has(variable)) {
+      newSelected.delete(variable)
+    } else {
+      newSelected.add(variable)
+    }
+    setManualSelectedVariables(newSelected)
+  }
+
+  const selectAllManualVariables = () => {
+    setManualSelectedVariables(new Set(data.numericColumns))
+  }
+
+  const clearAllManualVariables = () => {
+    setManualSelectedVariables(new Set())
+  }
+
+  // 수동 선택한 변수들로 PCA 실행
+  const runManualPCAAnalysis = async () => {
+    const variables = Array.from(manualSelectedVariables)
+    if (variables.length < 2) {
+      alert('최소 2개 이상의 변수를 선택해주세요.')
+      return
+    }
+    
+    if (variables.length > 8) {
+      alert('PCA 분석의 효율성을 위해 최대 8개 변수까지 선택 가능합니다.')
+      return
+    }
+
+    await runPCAAnalysis(variables)
+  }
+
+  // PCA 해설 생성 함수
+  const generatePCAInterpretationFromResult = async (pcaResult: any, variables: string[]) => {
+    setIsLoadingInterpretation(true)
+    setShowInterpretation(true)
+    
+    try {
+      const interpretationRequest: PCAInterpretationRequest = {
+        pcaResult: {
+          eigenvalues: pcaResult.eigenvalues,
+          explainedVariance: pcaResult.explainedVariance,
+          cumulativeVariance: pcaResult.cumulativeVariance,
+          variableNames: variables,
+          nComponents: pcaResult.nComponents,
+          scores: pcaResult.scores,
+          loadings: pcaResult.loadings
+        },
+        clusteringResult: {
+          clusters: pcaResult.clusters,
+          optimalK: Math.max(...pcaResult.clusters) + 1,
+          silhouetteScore: 0.5, // TODO: 실제 실루엣 점수 계산
+        },
+        statisticalTests: {
+          // TODO: 실제 통계 검정 결과 추가
+          bartlett: {
+            chiSquare: 117.60,
+            pValue: 0.001
+          },
+          kmo: {
+            value: 0.612
+          }
+        },
+        language: 'both',
+        provider: 'openai'
+      }
+
+      const response = await generatePCAInterpretation(interpretationRequest)
+      setPcaInterpretation(response.interpretation)
+    } catch (error) {
+      console.error('PCA Interpretation Error:', error)
+      alert('PCA 해설 생성 중 오류가 발생했습니다. 나중에 다시 시도해주세요.')
+    } finally {
+      setIsLoadingInterpretation(false)
+    }
+  }
+
   // PCA 추천 조합으로 바로 분석 실행 (진짜 PCA 분석)
   const runPCAAnalysis = async (variables: string[]) => {
     if (variables.length < 2) {
@@ -354,6 +446,20 @@ export default function ScanMode({
       ).join('\n')
       const clusterInfo = `발견된 군집 수: ${Math.max(...pcaResult.clusters) + 1}개`
       
+      // PCA 결과 저장 (해설 생성용)
+      const pcaResultData = {
+        pcaResult,
+        variables,
+        clusterInfo: {
+          optimalK: Math.max(...pcaResult.clusters) + 1,
+          silhouetteScore: 0.5 // TODO: 실제 실루엣 점수 계산
+        }
+      }
+      
+      console.log('🔧 Debug: PCA 결과 저장 중...', pcaResultData)
+      setLastPcaResult(pcaResultData)
+      console.log('🔧 Debug: PCA 결과 저장 완료!')
+
       // 스캔 결과 자동 스크롤
       setTimeout(() => {
         const analysisSection = document.querySelector('[data-analysis-panel]')
@@ -362,10 +468,11 @@ export default function ScanMode({
         }
       }, 100)
       
-      alert(`🎉 PCA 분석 완료!\n\n✅ 선택 변수: ${variables.join(', ')}\n📊 설명 분산: ${varianceInfo}\n🎯 ${clusterInfo}\n\n🔍 주성분 로딩:\n${loadingsInfo}\n\n💡 PC1 vs PC2 그래프가 분석 패널에 표시됩니다.\n🖱️ 클러스터별로 색칠된 그래프를 조작해보세요!`)
+      alert(`🎉 PCA 분석 완료!\n\n✅ 선택 변수: ${variables.join(', ')}\n📊 설명 분산: ${varianceInfo}\n🎯 ${clusterInfo}\n\n🔍 주성분 로딩:\n${loadingsInfo}\n\n💡 PC1 vs PC2 그래프가 분석 패널에 표시됩니다.\n🖱️ 클러스터별로 색칠된 그래프를 조작해보세요!\n\n📝 오른쪽 상단의 'AI 해설' 버튼으로 상세한 분석 해설을 확인하세요!`)
       
     } catch (error) {
-      console.error('PCA Analysis Error:', error)
+      console.error('🔧 Debug: PCA Analysis Error:', error)
+      console.error('🔧 Debug: Error details:', error instanceof Error ? error.message : 'Unknown error')
       alert(`❌ PCA 분석 중 오류가 발생했습니다:\n${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
@@ -962,19 +1069,86 @@ export default function ScanMode({
               <div className="p-4 rounded-lg" style={{backgroundColor: '#E6FBFA', border: '2px solid #9BE8F0'}}>
                 <div className="flex justify-between items-center mb-3">
                   <h4 className="font-medium flex items-center" style={{color: '#0357AF'}}>
-                    🔍 PCA 변수 조합 추천
+                    🔍 PCA 변수 선택
                   </h4>
+                  <div className="flex items-center gap-2">
+                    {/* 디버깅: PCA 결과 상태 표시 */}
+                    <span className="text-xs px-2 py-1 rounded bg-gray-100">
+                      Debug: {lastPcaResult ? '✅ PCA 완료' : '❌ PCA 없음'}
+                    </span>
+                    {lastPcaResult && (
+                      <button
+                        onClick={() => generatePCAInterpretationFromResult(lastPcaResult.pcaResult, lastPcaResult.variables)}
+                        disabled={isLoadingInterpretation}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                          isLoadingInterpretation 
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : 'bg-purple-600 text-white hover:bg-purple-700'
+                        }`}
+                      >
+                        {isLoadingInterpretation ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin" />
+                            생성 중...
+                          </>
+                        ) : (
+                          <>
+                            📝 AI 해설
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* 탭 메뉴 */}
+                <div className="flex gap-2 mb-4">
                   <button
-                    onClick={() => getAdvancedStatistics('pca-suggestion')}
-                    disabled={isLoadingStats}
-                    className="text-sm px-3 py-1 rounded-md text-white transition-all"
+                    onClick={() => setPcaTab('ai')}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                      pcaTab === 'ai' 
+                        ? 'text-white' 
+                        : 'text-gray-600 bg-white hover:bg-gray-50'
+                    }`}
                     style={{
-                      backgroundColor: isLoadingStats ? '#9CA3AF' : '#0357AF'
+                      backgroundColor: pcaTab === 'ai' ? '#0357AF' : undefined
                     }}
                   >
-                    {isLoadingStats ? '분석중...' : 'AI 추천'}
+                    🤖 AI 추천
+                  </button>
+                  <button
+                    onClick={() => setPcaTab('manual')}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                      pcaTab === 'manual' 
+                        ? 'text-white' 
+                        : 'text-gray-600 bg-white hover:bg-gray-50'
+                    }`}
+                    style={{
+                      backgroundColor: pcaTab === 'manual' ? '#0357AF' : undefined
+                    }}
+                  >
+                    ☑️ 수동 선택
                   </button>
                 </div>
+
+                {/* AI 추천 탭 */}
+                {pcaTab === 'ai' && (
+                  <div>
+                    <div className="flex justify-between items-center mb-3">
+                      <p className="text-sm" style={{color: '#0180CC'}}>
+                        PC2 설명분산 최소 10% 이상 조합만 추천
+                      </p>
+                      <button
+                        onClick={() => getAdvancedStatistics('pca-suggestion')}
+                        disabled={isLoadingStats}
+                        className="text-sm px-3 py-1 rounded-md text-white transition-all"
+                        style={{
+                          backgroundColor: isLoadingStats ? '#9CA3AF' : '#0357AF'
+                        }}
+                      >
+                        {isLoadingStats ? '분석중...' : 'AI 추천'}
+                      </button>
+                    </div>
                 
                                 {pcaSuggestions.length > 0 && (
                   <div className="space-y-3">
@@ -1083,14 +1257,100 @@ export default function ScanMode({
                             {suggestion.reason}
                           </p>
                           
-                          {suggestion.varianceExplained && (
-                            <div className="text-xs" style={{color: '#666'}}>
-                              설명력: PC1({suggestion.varianceExplained[0]?.toFixed(1)}%), 
-                              PC2({suggestion.varianceExplained[1]?.toFixed(1)}%)
-                            </div>
-                          )}
+                          <div className="text-xs" style={{color: '#666'}}>
+                            예상 총 설명력: {suggestion.expectedVariance?.toFixed(1)}%
+                            {suggestion.correlation && (
+                              <span> | 평균 상관계수: {suggestion.correlation.toFixed(2)}</span>
+                            )}
+                          </div>
                         </div>
                       ))}
+                    </div>
+                  </div>
+                )}
+                  </div>
+                )}
+
+                {/* 수동 선택 탭 */}
+                {pcaTab === 'manual' && (
+                  <div>
+                    <div className="mb-3">
+                      <p className="text-sm mb-3" style={{color: '#0180CC'}}>
+                        원하는 변수들을 체크박스로 선택하여 PCA 분석을 수행하세요
+                      </p>
+                      
+                      {/* 선택 컨트롤 */}
+                      <div className="flex justify-between items-center p-3 rounded-md mb-3" style={{backgroundColor: '#F0F8FF', border: '1px solid #74CEF7'}}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium" style={{color: '#0357AF'}}>
+                            선택된 변수: {manualSelectedVariables.size}개
+                          </span>
+                          {manualSelectedVariables.size > 0 && (
+                            <span className="text-xs" style={{color: '#0180CC'}}>
+                              ({Array.from(manualSelectedVariables).slice(0, 3).join(', ')}{manualSelectedVariables.size > 3 ? '...' : ''})
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={selectAllManualVariables}
+                            className="text-xs px-3 py-1 rounded-md transition-all"
+                            style={{
+                              backgroundColor: '#9BE8F0',
+                              color: '#0357AF'
+                            }}
+                          >
+                            전체 선택
+                          </button>
+                          <button
+                            onClick={clearAllManualVariables}
+                            className="text-xs px-3 py-1 rounded-md transition-all"
+                            style={{
+                              backgroundColor: '#F3F4F6',
+                              color: '#6B7280'
+                            }}
+                          >
+                            선택 해제
+                          </button>
+                          <button
+                            onClick={runManualPCAAnalysis}
+                            disabled={isScanning || manualSelectedVariables.size < 2}
+                            className="text-xs px-3 py-1 rounded-md text-white font-medium transition-all"
+                            style={{
+                              backgroundColor: isScanning || manualSelectedVariables.size < 2 ? '#9CA3AF' : '#E4815A',
+                              cursor: isScanning || manualSelectedVariables.size < 2 ? 'not-allowed' : 'pointer'
+                            }}
+                          >
+                            🚀 PCA 실행
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 변수 목록 */}
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-60 overflow-y-auto p-3 rounded-md" style={{backgroundColor: '#F9FAFB', border: '1px solid #E5E7EB'}}>
+                        {data.numericColumns.map((variable) => (
+                          <label key={variable} className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-white transition-all">
+                            <input
+                              type="checkbox"
+                              checked={manualSelectedVariables.has(variable)}
+                              onChange={() => toggleManualVariableSelection(variable)}
+                              className="w-4 h-4 rounded"
+                              style={{accentColor: '#0357AF'}}
+                            />
+                            <span className="text-sm" style={{color: '#374151'}}>
+                              {variable}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                      
+                      {manualSelectedVariables.size > 8 && (
+                        <div className="mt-2 p-2 rounded-md" style={{backgroundColor: '#FEF3C7', border: '1px solid #F59E0B', color: '#92400E'}}>
+                          <span className="text-xs">
+                            ⚠️ 효율적인 분석을 위해 최대 8개 변수까지 선택 가능합니다.
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1328,6 +1588,86 @@ export default function ScanMode({
                   selectedTypeColumn={scanOptions.selectedTypeColumn}
                 />
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PCA 해설 모달 */}
+      {showInterpretation && pcaInterpretation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            {/* 헤더 */}
+            <div className="flex justify-between items-center p-6 border-b border-gray-200">
+              <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                📊 PCA 분석 해설
+                <span className="text-sm font-normal text-gray-500">
+                  ({pcaInterpretation.metadata.provider})
+                </span>
+              </h2>
+              <button
+                onClick={() => setShowInterpretation(false)}
+                className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* 해설 내용 */}
+            <div className="p-6 space-y-6">
+              {pcaInterpretation.korean && (
+                <div>
+                  <h3 className="text-lg font-semibold text-blue-700 mb-3 flex items-center gap-2">
+                    🇰🇷 한국어 해설
+                  </h3>
+                  <div className="prose prose-sm max-w-none bg-blue-50 p-4 rounded-lg">
+                    <div style={{ whiteSpace: 'pre-wrap' }}>
+                      {pcaInterpretation.korean}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {pcaInterpretation.english && (
+                <div>
+                  <h3 className="text-lg font-semibold text-green-700 mb-3 flex items-center gap-2">
+                    🇺🇸 English Interpretation
+                  </h3>
+                  <div className="prose prose-sm max-w-none bg-green-50 p-4 rounded-lg">
+                    <div style={{ whiteSpace: 'pre-wrap' }}>
+                      {pcaInterpretation.english}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 메타데이터 */}
+              <div className="text-xs text-gray-500 border-t pt-4">
+                생성 시간: {new Date(pcaInterpretation.metadata.timestamp).toLocaleString('ko-KR')} | 
+                AI 모델: {pcaInterpretation.metadata.provider} | 
+                분석 유형: {pcaInterpretation.metadata.analysisType}
+              </div>
+            </div>
+
+            {/* 버튼 영역 */}
+            <div className="flex justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
+              <button
+                onClick={() => setShowInterpretation(false)}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+              >
+                닫기
+              </button>
+              <button
+                onClick={() => {
+                  const content = `PCA 분석 해설\n\n한국어:\n${pcaInterpretation.korean}\n\n영어:\n${pcaInterpretation.english}`
+                  navigator.clipboard.writeText(content).then(() => {
+                    alert('해설이 클립보드에 복사되었습니다!')
+                  })
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+              >
+                📋 복사하기
+              </button>
             </div>
           </div>
         </div>

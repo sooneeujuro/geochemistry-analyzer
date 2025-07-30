@@ -208,7 +208,8 @@ function getGeochemicalFallbacks(variables: string[]): PCASuggestion[] {
       variables: majorElements.slice(0, 4),
       reason: '주요원소 조성 변화 - 암석학적 진화 과정 추적 (PC1: ~60%, PC2: ~20% 예상)',
       expectedVariance: 80.0,
-      correlation: 0.65
+      correlation: 0.65,
+      confidence: 0.75 // 지구화학적으로 잘 검증된 조합
     })
   }
   
@@ -224,7 +225,8 @@ function getGeochemicalFallbacks(variables: string[]): PCASuggestion[] {
       variables: traceElements.slice(0, 3),
       reason: '미량원소 거동 - 마그마 진화 및 광물학적 제어 해석 (PC1: ~55%, PC2: ~25% 예상)',
       expectedVariance: 80.0,
-      correlation: 0.70
+      correlation: 0.70,
+      confidence: 0.85 // 미량원소는 더 명확한 패턴을 보임
     })
   }
   
@@ -240,7 +242,8 @@ function getGeochemicalFallbacks(variables: string[]): PCASuggestion[] {
       variables: reeElements.slice(0, 4),
       reason: '희토류 원소 패턴 - 광물 분별결정 및 지각진화 분석 (PC1: ~70%, PC2: ~15% 예상)',
       expectedVariance: 85.0,
-      correlation: 0.80
+      correlation: 0.80,
+      confidence: 0.90 // 희토류는 가장 일관된 패턴을 보임
     })
   }
   

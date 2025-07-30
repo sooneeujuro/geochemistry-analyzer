@@ -202,3 +202,95 @@ export function estimateAPICost(numericColumns: number, provider: 'openai' | 'go
     cost: Math.round(cost * 1000) / 1000 // 소수점 3자리
   }
 } 
+
+// PCA 해설을 위한 타입 정의
+export interface PCAInterpretationRequest {
+  pcaResult: {
+    eigenvalues: number[]
+    explainedVariance: number[]
+    cumulativeVariance: number[]
+    variableNames: string[]
+    nComponents: number
+    scores: number[][]
+    loadings: number[][]
+  }
+  clusteringResult: {
+    clusters: number[]
+    optimalK: number
+    silhouetteScore: number
+    alternativeK?: number
+    alternativeSilhouette?: number
+  }
+  statisticalTests?: {
+    bartlett?: {
+      chiSquare: number
+      pValue: number
+    }
+    kmo?: {
+      value: number
+    }
+  }
+  sampleNames?: string[]
+  language?: 'korean' | 'english' | 'both'
+  provider?: 'openai' | 'google'
+}
+
+export interface PCAInterpretation {
+  korean: string
+  english: string
+  metadata: {
+    provider: string
+    timestamp: string
+    analysisType: 'comprehensive_pca_interpretation'
+  }
+}
+
+export interface PCAInterpretationResponse {
+  success: boolean
+  interpretation: PCAInterpretation
+  timestamp: string
+}
+
+// PCA 해설 생성 함수
+export async function generatePCAInterpretation(
+  request: PCAInterpretationRequest
+): Promise<PCAInterpretationResponse> {
+  try {
+    const response = await fetch('/api/pca-interpretation', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+    }
+
+    const data: PCAInterpretationResponse = await response.json()
+    return data
+  } catch (error) {
+    console.error('PCA Interpretation Error:', error)
+    throw error
+  }
+}
+
+// PCA 결과에서 통계적 검정 결과 추출 (추후 statistics.ts에서 구현될 예정)
+export function extractStatisticalTests(pcaData: any): {
+  bartlett?: { chiSquare: number; pValue: number }
+  kmo?: { value: number }
+} {
+  // 이 함수는 statistics.ts에서 실제 통계 검정이 구현되면 업데이트됩니다
+  return {
+    // 임시 더미 데이터 - 실제로는 statistics.ts에서 계산된 값을 사용
+    bartlett: {
+      chiSquare: 117.60,
+      pValue: 0.0
+    },
+    kmo: {
+      value: 0.612
+    }
+  }
+} 

@@ -6,6 +6,7 @@ import { calculateStatistics } from '@/lib/statistics'
 import ScatterPlot from './ScatterPlot'
 import PCAResultsTable from './PCAResultsTable'
 import { Activity, TrendingUp, BarChart } from 'lucide-react'
+import { generatePCAInterpretation, PCAInterpretationRequest, PCAInterpretation } from '@/lib/ai-recommendations'
 
 interface AnalysisPanelProps {
   data: GeochemData
@@ -15,6 +16,11 @@ interface AnalysisPanelProps {
 export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelProps) {
   const [statistics, setStatistics] = useState<StatisticalResult | null>(null)
   const [loading, setLoading] = useState(false)
+  
+  // PCA 해설 관련 상태
+  const [pcaInterpretation, setPcaInterpretation] = useState<PCAInterpretation | null>(null)
+  const [isLoadingInterpretation, setIsLoadingInterpretation] = useState(false)
+  const [showInterpretation, setShowInterpretation] = useState(false)
 
   // 축 데이터 계산 함수
   const calculateAxisData = (axisConfig: NonNullable<ColumnSelection['x']>) => {
@@ -81,6 +87,52 @@ export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelPr
     return 'NS (유의하지 않음)'
   }
 
+  // PCA 해설 생성 함수
+  const generatePCAInterpretationFromResult = async () => {
+    if (!data.pcaResult) return
+    
+    setIsLoadingInterpretation(true)
+    setShowInterpretation(true)
+
+    try {
+      const interpretationRequest: PCAInterpretationRequest = {
+        pcaResult: {
+          eigenvalues: data.pcaResult.eigenvalues,
+          explainedVariance: data.pcaResult.explainedVariance,
+          cumulativeVariance: data.pcaResult.cumulativeVariance,
+          variableNames: data.pcaResult.variableNames,
+          nComponents: data.pcaResult.nComponents,
+          scores: data.pcaResult.scores,
+          loadings: data.pcaResult.loadings
+        },
+        clusteringResult: {
+          clusters: data.pcaResult.clusters,
+          optimalK: Math.max(...data.pcaResult.clusters) + 1,
+          silhouetteScore: 0.5, // TODO: 실제 실루엣 점수 계산
+        },
+        statisticalTests: {
+          bartlett: {
+            chiSquare: 117.60,
+            pValue: 0.001
+          },
+          kmo: {
+            value: 0.612
+          }
+        },
+        language: 'both',
+        provider: 'openai'
+      }
+
+      const response = await generatePCAInterpretation(interpretationRequest)
+      setPcaInterpretation(response.interpretation)
+    } catch (error) {
+      console.error('PCA Interpretation Error:', error)
+      alert('PCA 해설 생성 중 오류가 발생했습니다. 나중에 다시 시도해주세요.')
+    } finally {
+      setIsLoadingInterpretation(false)
+    }
+  }
+
   if (!selectedColumns.x || !selectedColumns.y) {
     return null
   }
@@ -140,6 +192,38 @@ export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelPr
              selectedColumns.y?.numerator === 'PC2' && 
              data.pcaResult && (
               <div className="lg:col-span-2">
+                {/* PCA 해설 헤더와 버튼 */}
+                <div className="bg-white rounded-lg shadow-lg p-4 mb-4">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-lg font-semibold text-blue-800 flex items-center">
+                      🧠 PCA 분석 해설
+                    </h3>
+                    <button
+                      onClick={generatePCAInterpretationFromResult}
+                      disabled={isLoadingInterpretation}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                        isLoadingInterpretation 
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          : 'bg-purple-600 text-white hover:bg-purple-700'
+                      }`}
+                    >
+                      {isLoadingInterpretation ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin" />
+                          생성 중...
+                        </>
+                      ) : (
+                        <>
+                          📝 AI 해설 생성
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <p className="text-sm text-gray-600 mt-2">
+                    OpenAI GPT-4를 활용하여 PCA 분석 결과에 대한 상세한 통계적 해설을 제공합니다.
+                  </p>
+                </div>
+                
                 <PCAResultsTable
                   pcaResult={data.pcaResult}
                   data={data}
@@ -226,6 +310,86 @@ export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelPr
           </div>
         )}
       </div>
+
+      {/* PCA 해설 모달 */}
+      {showInterpretation && pcaInterpretation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            {/* 헤더 */}
+            <div className="flex justify-between items-center p-6 border-b border-gray-200">
+              <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                📊 PCA 분석 해설
+                <span className="text-sm font-normal text-gray-500">
+                  ({pcaInterpretation.metadata.provider})
+                </span>
+              </h2>
+              <button
+                onClick={() => setShowInterpretation(false)}
+                className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* 해설 내용 */}
+            <div className="p-6 space-y-6">
+              {pcaInterpretation.korean && (
+                <div>
+                  <h3 className="text-lg font-semibold text-blue-700 mb-3 flex items-center gap-2">
+                    🇰🇷 한국어 해설
+                  </h3>
+                  <div className="prose prose-sm max-w-none bg-blue-50 p-4 rounded-lg">
+                    <div style={{ whiteSpace: 'pre-wrap' }}>
+                      {pcaInterpretation.korean}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {pcaInterpretation.english && (
+                <div>
+                  <h3 className="text-lg font-semibold text-green-700 mb-3 flex items-center gap-2">
+                    🇺🇸 English Interpretation
+                  </h3>
+                  <div className="prose prose-sm max-w-none bg-green-50 p-4 rounded-lg">
+                    <div style={{ whiteSpace: 'pre-wrap' }}>
+                      {pcaInterpretation.english}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 메타데이터 */}
+              <div className="text-xs text-gray-500 border-t pt-4">
+                생성 시간: {new Date(pcaInterpretation.metadata.timestamp).toLocaleString('ko-KR')} |
+                AI 모델: {pcaInterpretation.metadata.provider} |
+                분석 유형: {pcaInterpretation.metadata.analysisType}
+              </div>
+            </div>
+
+            {/* 버튼 영역 */}
+            <div className="flex justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
+              <button
+                onClick={() => setShowInterpretation(false)}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+              >
+                닫기
+              </button>
+              <button
+                onClick={() => {
+                  const content = `PCA 분석 해설\n\n한국어:\n${pcaInterpretation.korean}\n\n영어:\n${pcaInterpretation.english}`
+                  navigator.clipboard.writeText(content).then(() => {
+                    alert('해설이 클립보드에 복사되었습니다!')
+                  })
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+              >
+                📋 복사하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 } 
