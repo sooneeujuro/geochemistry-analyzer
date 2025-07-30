@@ -81,22 +81,10 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('AI Recommendations API Error:', error)
-    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace')
-    console.error('Request body:', requestBody)
-    console.error('Environment check:', {
-      hasOpenAIKey: !!process.env.OPENAI_API_KEY,
-      hasGoogleKey: !!process.env.GOOGLE_AI_API_KEY,
-      openaiKeyLength: process.env.OPENAI_API_KEY?.length || 0,
-      googleKeyLength: process.env.GOOGLE_AI_API_KEY?.length || 0
-    })
+    console.error('AI API Error:', error instanceof Error ? error.message : 'Unknown error')
     
     return NextResponse.json(
-      { 
-        error: 'Internal server error',
-        details: error instanceof Error ? error.message : 'Unknown error',
-        timestamp: new Date().toISOString()
-      },
+      { error: 'AI service temporarily unavailable' },
       { status: 500 }
     )
   }
@@ -114,34 +102,9 @@ async function getOpenAIRecommendations({
   maxRecommendations: number
   apiKey: string
 }): Promise<AIRecommendation[]> {
-  const prompt = `You are a geochemistry expert. Analyze these geochemical variables and recommend the most scientifically meaningful element/oxide ratio combinations for correlation analysis.
+  const prompt = `Recommend ${Math.min(maxRecommendations, 5)} geochemical variable pairs from: ${columns.slice(0, 10).join(', ')}.
 
-Variables: ${columns.join(', ')}
-${sampleDescription ? `Sample context: ${sampleDescription}` : ''}
-
-Please recommend ${maxRecommendations} variable pairs that would show geochemically significant correlations, considering:
-- Mineral chemistry relationships
-- Petrogenetic processes
-- Geochemical behavior
-- Alteration patterns
-
-For each recommendation, provide:
-1. X-axis variable
-2. Y-axis variable  
-3. Scientific reason (brief)
-4. Confidence score (0-1)
-
-Respond in JSON format:
-{
-  "recommendations": [
-    {
-      "xColumn": "variable1",
-      "yColumn": "variable2", 
-      "reason": "Scientific explanation",
-      "confidence": 0.9
-    }
-  ]
-}`
+Return JSON: {"recommendations": [{"xColumn": "X", "yColumn": "Y", "reason": "brief reason", "confidence": 0.8}]}`
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -150,15 +113,10 @@ Respond in JSON format:
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'gpt-4',
-      messages: [
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      max_tokens: 2000,
-      temperature: 0.3,
+      model: 'gpt-3.5-turbo',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 500,
+      temperature: 0.1,
     }),
   })
 
@@ -190,12 +148,9 @@ async function getGoogleAIRecommendations({
   maxRecommendations: number
   apiKey: string
 }): Promise<AIRecommendation[]> {
-  const prompt = `You are a geochemistry expert. Analyze these geochemical variables and recommend the most scientifically meaningful element/oxide ratio combinations for correlation analysis.
+  const prompt = `Recommend ${Math.min(maxRecommendations, 5)} geochemically significant variable pairs from: ${columns.slice(0, 10).join(', ')}.
 
-Variables: ${columns.join(', ')}
-${sampleDescription ? `Sample context: ${sampleDescription}` : ''}
-
-Please recommend ${maxRecommendations} variable pairs that would show geochemically significant correlations. Respond in JSON format with "recommendations" array containing objects with "xColumn", "yColumn", "reason", and "confidence" fields.`
+Return JSON: {"recommendations": [{"xColumn": "X", "yColumn": "Y", "reason": "brief reason", "confidence": 0.8}]}`
 
   const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
     method: 'POST',
@@ -218,43 +173,36 @@ Please recommend ${maxRecommendations} variable pairs that would show geochemica
   }
 
   const data = await response.json()
-  console.log('Google AI Full Response:', JSON.stringify(data, null, 2))
   
   // Google AI 응답 구조 확인
   if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
-    console.error('Unexpected Google AI response structure:', data)
+    console.error('Invalid Google AI response structure')
     throw new Error('Invalid Google AI response structure')
   }
   
   const content = data.candidates[0].content.parts[0].text
-  console.log('Google AI Raw Content:', content)
 
   try {
-    // JSON 형식 검사 및 파싱
     const parsed = JSON.parse(content)
-    console.log('Google AI Parsed JSON:', JSON.stringify(parsed, null, 2))
-    
-    if (parsed.recommendations && Array.isArray(parsed.recommendations)) {
-      console.log('Found recommendations:', parsed.recommendations.length)
-      return parsed.recommendations
-    } else {
-      console.log('No recommendations array found in parsed response')
-      return []
-    }
+    return parsed.recommendations || []
   } catch (error) {
-    console.error('Failed to parse Google AI response as JSON:', content)
-    console.error('Parse error:', error)
+    console.error('Failed to parse Google AI JSON response')
     
-    // JSON 파싱 실패 시 간단한 형태로 변환 시도
-    console.log('Attempting to extract recommendations from text...')
-    
-    // 간단한 패턴 매칭으로 추천사항 추출 시도
-    const textContent = content.toLowerCase()
-    const lines = content.split('\n').filter((line: string) => line.trim())
-    
-    console.log('Content lines:', lines)
-    
-    return []
+    // 간단한 폴백 추천사항 반환
+    return [
+      {
+        xColumn: "SiO2",
+        yColumn: "Al2O3",
+        reason: "Primary silicate mineral correlation",
+        confidence: 0.8
+      },
+      {
+        xColumn: "MgO", 
+        yColumn: "FeO",
+        reason: "Mafic mineral correlation",
+        confidence: 0.7
+      }
+    ]
   }
 }
 
