@@ -129,10 +129,20 @@ export default function ScanMode({
         })
       })
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || `API 호출 실패: ${response.status}`)
-      }
+              if (!response.ok) {
+          let errorData;
+          try {
+            errorData = await response.json()
+          } catch {
+            errorData = { error: `HTTP ${response.status}: ${response.statusText}` }
+          }
+          console.error('API Error Details:', {
+            status: response.status,
+            statusText: response.statusText,
+            errorData
+          })
+          throw new Error(errorData.error || `API 호출 실패: ${response.status}`)
+        }
 
       const result = await response.json()
       setAiRecommendations(result.recommendations || [])
