@@ -15,8 +15,10 @@ interface AIRecommendation {
 }
 
 export async function POST(request: NextRequest) {
+  let requestBody: any = null
   try {
-    const body: AIRecommendationRequest = await request.json()
+    requestBody = await request.json()
+    const body: AIRecommendationRequest = requestBody
     const { columns, sampleDescription, provider, maxRecommendations = 10 } = body
 
     // 입력 검증
@@ -80,8 +82,21 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('AI Recommendations API Error:', error)
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace')
+    console.error('Request body:', requestBody)
+    console.error('Environment check:', {
+      hasOpenAIKey: !!process.env.OPENAI_API_KEY,
+      hasGoogleKey: !!process.env.GOOGLE_AI_API_KEY,
+      openaiKeyLength: process.env.OPENAI_API_KEY?.length || 0,
+      googleKeyLength: process.env.GOOGLE_AI_API_KEY?.length || 0
+    })
+    
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { 
+        error: 'Internal server error',
+        details: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      },
       { status: 500 }
     )
   }
