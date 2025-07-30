@@ -49,6 +49,28 @@ export default function Home() {
     setMode('analysis')
   }
 
+  // 스캔 완료 처리
+  const handleScanComplete = (results: ScanResult[], summary: ScanSummary | null) => {
+    setScanResults(results)
+    setScanSummary(summary)
+  }
+
+  // 새 스캔 시작 처리
+  const handleStartNewScan = () => {
+    setScanResults([])
+    setScanSummary(null)
+  }
+
+  // 데이터 업데이트 처리 (PCA 결과 등)
+  const handleDataUpdate = (newData: GeochemData) => {
+    setData(newData)
+  }
+
+  // 모드 변경 처리 (PCA → 분석 모드 전환)
+  const handleModeChange = (newMode: 'analysis' | 'scan') => {
+    setMode(newMode)
+  }
+
   if (mode === 'scan' && data) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-purple-50 to-indigo-100 p-8">
@@ -80,14 +102,10 @@ export default function Home() {
             selectedTypeColumn={selectedColumns.selectedTypeColumn}
             scanResults={scanResults}
             scanSummary={scanSummary}
-            onScanComplete={(results, summary) => {
-              setScanResults(results)
-              setScanSummary(summary)
-            }}
-            onStartNewScan={() => {
-              setScanResults([])
-              setScanSummary(null)
-            }}
+            onScanComplete={handleScanComplete}
+            onStartNewScan={handleStartNewScan}
+            onDataUpdate={handleDataUpdate}
+            onModeChange={handleModeChange}
           />
         </div>
       </main>

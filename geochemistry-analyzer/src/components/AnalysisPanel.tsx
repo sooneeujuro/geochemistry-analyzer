@@ -85,7 +85,7 @@ export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelPr
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-lg">
+    <div className="bg-white rounded-lg shadow-lg" data-analysis-panel>
       <div className="border-b border-gray-200 p-6">
         <h2 className="text-xl font-semibold text-gray-800 flex items-center">
           <Activity className="h-6 w-6 mr-2 text-blue-500" />

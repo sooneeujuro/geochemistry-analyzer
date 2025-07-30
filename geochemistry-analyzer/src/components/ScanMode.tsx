@@ -25,6 +25,8 @@ interface ScanModeProps {
   scanSummary?: ScanSummary | null
   onScanComplete?: (results: ScanResult[], summary: ScanSummary | null) => void
   onStartNewScan?: () => void
+  onDataUpdate?: (data: GeochemData) => void // 데이터 업데이트 함수
+  onModeChange?: (mode: 'scan' | 'analysis') => void // 모드 변경 함수
 }
 
 export default function ScanMode({ 
@@ -34,7 +36,9 @@ export default function ScanMode({
   scanResults: externalScanResults = [],
   scanSummary: externalScanSummary = null,
   onScanComplete,
-  onStartNewScan
+  onStartNewScan,
+  onDataUpdate, // 데이터 업데이트 함수 추가
+  onModeChange // 모드 변경 함수 추가
 }: ScanModeProps) {
   const [isScanning, setIsScanning] = useState(false)
   const [showPDFReport, setShowPDFReport] = useState(false)
@@ -286,7 +290,7 @@ export default function ScanMode({
     setSelectedVariables(new Set(variables))
   }
 
-  // PCA 추천 조합으로 바로 분석 실행
+  // PCA 추천 조합으로 바로 분석 실행 (진짜 PCA 분석)
   const runPCAAnalysis = async (variables: string[]) => {
     if (variables.length < 2) {
       alert('최소 2개 이상의 변수가 필요합니다.')
@@ -296,7 +300,7 @@ export default function ScanMode({
     try {
       // PCA 분석 실행
       const { performPCA } = await import('@/lib/statistics')
-      const pcaResult = performPCA(data.data, variables, 2)
+      const pcaResult = performPCA(data.data, variables, 2) // 2 주성분 계산
       
       // PC1, PC2를 데이터에 추가
       const enhancedData = data.data.map((row: Record<string, any>, index: number) => {
@@ -312,16 +316,37 @@ export default function ScanMode({
       const updatedData = {
         ...data,
         data: enhancedData,
-        numericColumns: [...data.numericColumns, 'PC1', 'PC2']
+        numericColumns: [...data.numericColumns.filter(col => col !== 'PC1' && col !== 'PC2'), 'PC1', 'PC2']
       }
 
-                    // PCA 결과 정보 표시
-       const varianceInfo = `PC1: ${pcaResult.explainedVariance[0]?.toFixed(1)}%, PC2: ${pcaResult.explainedVariance[1]?.toFixed(1)}%`
-       const loadingsInfo = pcaResult.loadings.map((loading, compIndex) => 
-         `PC${compIndex + 1}: ${variables.map((v, i) => `${v}(${loading[i]?.toFixed(2)})`).join(', ')}`
-       ).join('\n')
-       
-       alert(`🎉 PCA 분석 완료!\n\n✅ 선택 변수: ${variables.join(', ')}\n📊 설명 분산: ${varianceInfo}\n\n🔍 주성분 로딩:\n${loadingsInfo}\n\n💡 이 결과를 바탕으로 데이터 해석을 진행하세요!`)
+      // 데이터 업데이트 함수가 있다면 호출 (부모 컴포넌트의 데이터 업데이트)
+      if (typeof onDataUpdate === 'function') {
+        onDataUpdate(updatedData)
+      }
+
+      // PC1 vs PC2를 분석 패널에서 선택하도록 전환
+      onResultSelect('PC1', 'PC2')
+
+      // 분석 모드로 자동 전환 (모드 변경 함수가 있다면)
+      if (typeof onModeChange === 'function') {
+        onModeChange('analysis')
+      }
+
+      // PCA 결과 정보 표시
+      const varianceInfo = `PC1: ${pcaResult.explainedVariance[0]?.toFixed(1)}%, PC2: ${pcaResult.explainedVariance[1]?.toFixed(1)}%`
+      const loadingsInfo = pcaResult.loadings.map((loading, compIndex) => 
+        `PC${compIndex + 1}: ${variables.map((v, i) => `${v}(${loading[i]?.toFixed(2)})`).join(', ')}`
+      ).join('\n')
+      
+      // 스캔 결과 자동 스크롤
+      setTimeout(() => {
+        const analysisSection = document.querySelector('[data-analysis-panel]')
+        if (analysisSection) {
+          analysisSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+      }, 100)
+      
+      alert(`🎉 PCA 분석 완료!\n\n✅ 선택 변수: ${variables.join(', ')}\n📊 설명 분산: ${varianceInfo}\n\n🔍 주성분 로딩:\n${loadingsInfo}\n\n💡 PC1 vs PC2 그래프가 분석 패널에 표시됩니다.\n🖱️ 그래프를 자유롭게 조작해보세요!`)
       
     } catch (error) {
       console.error('PCA Analysis Error:', error)
