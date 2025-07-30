@@ -212,6 +212,31 @@ export default function ScanMode({
     }
   }
 
+  // PCA 추천 조합으로 바로 분석 실행
+  const runPCAAnalysis = async (variables: string[]) => {
+    if (variables.length < 2) {
+      alert('최소 2개 이상의 변수가 필요합니다.')
+      return
+    }
+
+    // 추천된 변수들만 분석하도록 excludeColumns 설정
+    const variablesToExclude = data.numericColumns.filter(col => !variables.includes(col))
+    
+    setScanOptions(prev => ({
+      ...prev,
+      excludeColumns: variablesToExclude,
+      aiRecommendationsOnly: false // PCA 조합은 모든 조합을 분석
+    }))
+
+    // 스캔 실행 알림
+    alert(`PCA 추천 변수들 (${variables.join(', ')})로 분석을 시작합니다.`)
+
+    // 약간의 딜레이 후 스캔 실행 (상태 업데이트 반영)
+    setTimeout(() => {
+      performScan()
+    }, 200)
+  }
+
   // 예상 비용 계산
   const estimatedCost = useMemo(() => {
     return estimateAPICost(analysisColumns.length, scanOptions.aiProvider || 'google')
@@ -762,10 +787,24 @@ export default function ScanMode({
                           <span className="text-sm font-medium" style={{color: '#0357AF'}}>
                             {suggestion.variables.join(', ')}
                           </span>
-                          <span className="text-xs px-2 py-0.5 rounded-full text-white"
-                                style={{backgroundColor: '#0180CC'}}>
-                            신뢰도: {(suggestion.confidence * 100).toFixed(0)}%
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs px-2 py-0.5 rounded-full text-white"
+                                  style={{backgroundColor: '#0180CC'}}>
+                              신뢰도: {(suggestion.confidence * 100).toFixed(0)}%
+                            </span>
+                            <button
+                              onClick={() => runPCAAnalysis(suggestion.variables)}
+                              disabled={isScanning}
+                              className="text-xs px-2 py-1 rounded-md text-white font-medium transition-all"
+                              style={{
+                                backgroundColor: isScanning ? '#9CA3AF' : '#E4815A',
+                                cursor: isScanning ? 'not-allowed' : 'pointer'
+                              }}
+                              title="이 조합으로 즉시 분석 실행"
+                            >
+                              🚀 분석 실행
+                            </button>
+                          </div>
                         </div>
                         <p className="text-xs" style={{color: '#0180CC'}}>
                           {suggestion.reason}
