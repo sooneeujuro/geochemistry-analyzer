@@ -384,25 +384,76 @@ export function performPCA(
   nComponents?: number
 ): PCAResult {
   try {
+    console.log('PCA 시작:', { 
+      totalRows: data.length, 
+      variables: variableNames,
+      sampleData: data.slice(0, 3)
+    })
+
     // 데이터 준비: 변수별로 숫자 데이터만 추출하고 결측값 제거
     const cleanData: number[][] = []
-    const validIndices: number[] = []
+    const invalidRows: number[] = []
     
-    data.forEach((row, index) => {
+    data.forEach((row, rowIndex) => {
       const values = variableNames.map(name => {
         const val = row[name]
+        // 더 관대한 숫자 변환 시도
+        if (typeof val === 'string' && val.trim() !== '') {
+          const parsed = parseFloat(val.trim())
+          return !isNaN(parsed) && isFinite(parsed) ? parsed : null
+        }
         return typeof val === 'number' && !isNaN(val) && isFinite(val) ? val : null
       })
       
       // 모든 변수가 유효한 값을 가진 행만 포함
       if (values.every(val => val !== null)) {
         cleanData.push(values as number[])
-        validIndices.push(index)
+      } else {
+        invalidRows.push(rowIndex)
       }
     })
+
+    console.log('데이터 정리 결과:', {
+      totalRows: data.length,
+      validRows: cleanData.length,
+      invalidRows: invalidRows.length,
+      invalidRowsIndices: invalidRows.slice(0, 10), // 처음 10개만 표시
+      sampleCleanData: cleanData.slice(0, 3)
+    })
+
+    // 변수별 유효 데이터 개수 확인
+    const variableValidCounts = variableNames.map(name => {
+      const validCount = data.filter(row => {
+        const val = row[name]
+        if (typeof val === 'string' && val.trim() !== '') {
+          const parsed = parseFloat(val.trim())
+          return !isNaN(parsed) && isFinite(parsed)
+        }
+        return typeof val === 'number' && !isNaN(val) && isFinite(val)
+      }).length
+      return { variable: name, validCount, totalCount: data.length }
+    })
+
+    console.log('변수별 유효 데이터:', variableValidCounts)
     
     if (cleanData.length < 3) {
-      throw new Error('PCA를 수행하기에 유효한 데이터가 부족합니다. (최소 3개 관측치 필요)')
+      const errorDetails = `
+PCA 분석에 필요한 유효 데이터가 부족합니다.
+
+📊 데이터 현황:
+• 전체 행 수: ${data.length}개
+• 유효 행 수: ${cleanData.length}개 
+• 필요한 최소 행 수: 3개
+
+🔍 변수별 유효 데이터:
+${variableValidCounts.map(v => `• ${v.variable}: ${v.validCount}/${v.totalCount}개`).join('\n')}
+
+💡 해결 방법:
+1. 결측값이 적은 변수들을 선택해보세요
+2. 데이터에 숫자가 아닌 값(텍스트, 빈 칸)이 있는지 확인해보세요
+3. 더 많은 데이터가 포함된 파일을 사용해보세요`
+
+      throw new Error(errorDetails)
     }
     
     if (variableNames.length < 2) {
@@ -412,7 +463,7 @@ export function performPCA(
     // PCA 수행 (pca-js 사용)
     const vectors = (PCA as any).getEigenVectors(cleanData)
     
-    // 컴포넌트 수 결정 (기본: 최대 변수 수와 3 중 작은 값)
+    // 컴포넌트 수 결정 (기본: 최대 변수 수와 2 중 작은 값)
     const maxComponents = Math.min(variableNames.length, cleanData.length - 1)
     const finalNComponents = nComponents ? Math.min(nComponents, maxComponents) : Math.min(maxComponents, 2)
     
@@ -441,9 +492,25 @@ export function performPCA(
     // 로딩 (변수별 기여도) 계산
     const loadings = selectedVectors.map((vector: any) => vector.vector.slice(0, variableNames.length))
     
-    // K-means 클러스터링 수행
-    const k = findOptimalClusters(scores.map(row => row.slice(0, 2))); // 첫 두 컴포넌트만 사용
-    const clusters = kMeansClustering(scores, k);
+    // K-means 클러스터링 수행 (유효한 데이터만 사용)
+    const k = findOptimalClusters(scores.map(row => row.slice(0, 2))) // 첫 두 컴포넌트만 사용
+    const clusters = kMeansClustering(scores, k)
+    
+    // 원본 데이터 크기에 맞춰 클러스터 정보 확장 (유효하지 않은 행은 -1로 표시)
+    const fullClusters = new Array(data.length).fill(-1)
+    let validIndex = 0
+    data.forEach((_, rowIndex) => {
+      if (!invalidRows.includes(rowIndex)) {
+        fullClusters[rowIndex] = clusters[validIndex] || 0
+        validIndex++
+      }
+    })
+
+    console.log('PCA 완료:', {
+      explainedVariance,
+      clustersFound: k,
+      validDataUsed: cleanData.length
+    })
     
     return {
       scores: scores,
@@ -453,7 +520,7 @@ export function performPCA(
       eigenvalues: eigenvalues,
       variableNames: variableNames,
       nComponents: finalNComponents,
-      clusters: clusters
+      clusters: fullClusters  // 전체 크기 배열 반환
     }
     
   } catch (error) {
@@ -466,11 +533,43 @@ export function performPCA(
 function kMeansClustering(data: number[][], k: number, maxIterations: number = 100): number[] {
   if (data.length === 0 || k <= 0) return []
   
-  // 초기 중심점 설정 (랜덤)
+  // 데이터가 k보다 적으면 각각을 다른 클러스터로 할당
+  if (data.length <= k) {
+    return data.map((_, index) => index)
+  }
+  
+  // 초기 중심점 설정 (k-means++ 방식으로 개선)
   const centroids: number[][] = []
-  for (let i = 0; i < k; i++) {
-    const randomIndex = Math.floor(Math.random() * data.length)
-    centroids.push([...data[randomIndex]])
+  
+  // 첫 번째 중심점은 랜덤하게 선택
+  const firstIndex = Math.floor(Math.random() * data.length)
+  centroids.push([...data[firstIndex]])
+  
+  // 나머지 중심점들은 기존 중심점들로부터 가장 먼 점을 선택
+  for (let i = 1; i < k; i++) {
+    let maxDistance = -1
+    let bestPoint = [...data[0]]
+    
+    for (const point of data) {
+      let minDistToCentroid = Infinity
+      
+      // 각 기존 중심점까지의 최소 거리 계산
+      for (const centroid of centroids) {
+        const distance = Math.sqrt(
+          Math.pow(point[0] - centroid[0], 2) + 
+          Math.pow(point[1] - centroid[1], 2)
+        )
+        minDistToCentroid = Math.min(minDistToCentroid, distance)
+      }
+      
+      // 가장 먼 점을 다음 중심점으로 선택
+      if (minDistToCentroid > maxDistance) {
+        maxDistance = minDistToCentroid
+        bestPoint = [...point]
+      }
+    }
+    
+    centroids.push(bestPoint)
   }
   
   let clusters: number[] = new Array(data.length).fill(0)
@@ -520,9 +619,12 @@ function kMeansClustering(data: number[][], k: number, maxIterations: number = 1
 function findOptimalClusters(data: number[][], maxK: number = 6): number {
   if (data.length < 4) return 2
   
+  // 데이터가 적으면 클러스터 수를 제한
+  const actualMaxK = Math.min(maxK, Math.floor(data.length / 2), 4)
+  
   const wcss: number[] = []
   
-  for (let k = 1; k <= Math.min(maxK, Math.floor(data.length / 2)); k++) {
+  for (let k = 1; k <= actualMaxK; k++) {
     const clusters = kMeansClustering(data, k)
     let totalWCSS = 0
     
@@ -546,19 +648,21 @@ function findOptimalClusters(data: number[][], maxK: number = 6): number {
     wcss.push(totalWCSS)
   }
   
-  // 엘보우 포인트 찾기 (간단한 방법)
+  // 엘보우 포인트 찾기 (개선된 방법)
   let optimalK = 2
   if (wcss.length > 2) {
+    let maxImprovement = 0
     for (let i = 1; i < wcss.length - 1; i++) {
-      const prevSlope = wcss[i] - wcss[i - 1]
-      const nextSlope = wcss[i + 1] - wcss[i]
+      const improvement = wcss[i - 1] - wcss[i]
+      const nextImprovement = wcss[i] - wcss[i + 1]
       
-      if (Math.abs(prevSlope) > Math.abs(nextSlope) * 2) {
+      // 개선 정도가 급격히 감소하는 지점 찾기
+      if (improvement > nextImprovement * 1.5 && improvement > maxImprovement) {
+        maxImprovement = improvement
         optimalK = i + 1
-        break
       }
     }
   }
   
-  return Math.max(2, Math.min(optimalK, 4)) // 2-4 클러스터로 제한
+  return Math.max(2, Math.min(optimalK, actualMaxK))
 } 

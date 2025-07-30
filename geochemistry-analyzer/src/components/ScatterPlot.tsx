@@ -109,6 +109,9 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
   const getColorForType = (type: string, index: number) => {
     if (isPCAMode) {
       // PCA 모드: 클러스터별 색상 사용
+      if (type === 'Invalid Data') {
+        return '#9CA3AF' // 회색 (유효하지 않은 데이터)
+      }
       const clusterIndex = parseInt(type.replace('Cluster ', '')) - 1
       return pcaClusterColors[clusterIndex % pcaClusterColors.length]
     } else {
@@ -156,7 +159,9 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
           x: xValue,
           y: yValue,
           type: isPCAMode && clusterData.length > index
-            ? `Cluster ${clusterData[index] + 1}`  // PCA 모드: 클러스터별 그룹핑
+            ? clusterData[index] === -1 
+              ? 'Invalid Data'  // 유효하지 않은 데이터
+              : `Cluster ${clusterData[index] + 1}`  // PCA 모드: 클러스터별 그룹핑
             : selectedColumns.useTypeColumn && selectedColumns.selectedTypeColumn 
               ? row[selectedColumns.selectedTypeColumn] 
               : 'default',
@@ -220,15 +225,12 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
       groups.get(type)!.push(point)
     })
     
-    const colors = plotOptions.useCustomColors ? plotOptions.customColors : 
-      ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#F97316', '#06B6D4', '#84CC16']
-    
     return Array.from(groups.entries()).map(([type, data], index) => ({
       type,
       data,
-      color: colors[index % colors.length]
+      color: getColorForType(type, index)
     }))
-  }, [chartData, selectedColumns.useTypeColumn, selectedColumns.selectedTypeColumn, plotOptions])
+  }, [chartData, selectedColumns.useTypeColumn, selectedColumns.selectedTypeColumn, plotOptions, isPCAMode, clusterData])
 
   // 숫자 포맷팅 함수
   const formatNumber = (value: number): string => {
@@ -244,7 +246,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
 
   // 기본 파일명 생성
   const generateDefaultFileName = (): string => {
-    const originalFileName = data.metadata.fileName.replace(/\.[^/.]+$/, "") // 확장자 제거
+    const originalFileName = data.fileName.replace(/\.[^/.]+$/, "") // 확장자 제거
     const xLabel = selectedColumns.x?.label || 'X'
     const yLabel = selectedColumns.y?.label || 'Y'
     return `${originalFileName}_${xLabel} vs ${yLabel}`
@@ -588,7 +590,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                   <strong>기본 형식:</strong>
                 </p>
                 <p className="text-xs text-gray-600">
-                  {data.metadata.fileName.replace(/\.[^/.]+$/, "")}_X축 vs Y축
+                  {data.fileName.replace(/\.[^/.]+$/, "")}_X축 vs Y축
                 </p>
                 <button
                   onClick={() => setCustomFileName(generateDefaultFileName())}
@@ -1071,7 +1073,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                   key={group.type}
                   name={group.type}
                   data={group.data}
-                  fill={group.color}
+                                      fill={group.color}
                   shape={(props: any) => (
                     <CustomMarker 
                       {...props} 
