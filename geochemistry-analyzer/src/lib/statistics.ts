@@ -1,5 +1,8 @@
 import * as ss from 'simple-statistics'
-import { StatisticalResult } from '@/types/geochem'
+import { StatisticalResult, PCAResult } from '@/types/geochem'
+
+// PCA-js import (타입 선언)
+const PCA = require('pca-js')
 
 export function calculateStatistics(
   xData: number[],
@@ -372,4 +375,84 @@ export function suggestPCAVariables(
   })
   
   return suggestions.sort((a, b) => b.confidence - a.confidence)
+}
+
+// PCA 계산 함수 (pca-js 사용)
+export function performPCA(
+  data: Record<string, any>[],
+  variableNames: string[],
+  nComponents?: number
+): PCAResult {
+  try {
+    // 데이터 준비: 변수별로 숫자 데이터만 추출하고 결측값 제거
+    const cleanData: number[][] = []
+    const validIndices: number[] = []
+    
+    data.forEach((row, index) => {
+      const values = variableNames.map(name => {
+        const val = row[name]
+        return typeof val === 'number' && !isNaN(val) && isFinite(val) ? val : null
+      })
+      
+      // 모든 변수가 유효한 값을 가진 행만 포함
+      if (values.every(val => val !== null)) {
+        cleanData.push(values as number[])
+        validIndices.push(index)
+      }
+    })
+    
+    if (cleanData.length < 3) {
+      throw new Error('PCA를 수행하기에 유효한 데이터가 부족합니다. (최소 3개 관측치 필요)')
+    }
+    
+    if (variableNames.length < 2) {
+      throw new Error('PCA를 수행하기에 변수가 부족합니다. (최소 2개 변수 필요)')
+    }
+    
+    // PCA 수행 (pca-js 사용)
+    const vectors = (PCA as any).getEigenVectors(cleanData)
+    
+    // 컴포넌트 수 결정 (기본: 최대 변수 수와 3 중 작은 값)
+    const maxComponents = Math.min(variableNames.length, cleanData.length - 1)
+    const finalNComponents = nComponents ? Math.min(nComponents, maxComponents) : Math.min(maxComponents, 2)
+    
+    // PCA 결과 추출
+    const selectedVectors = vectors.slice(0, finalNComponents)
+    const adjustedData = (PCA as any).computeAdjustedData(cleanData, ...selectedVectors)
+    
+    // 설명 분산 계산
+    const totalVariance = vectors.reduce((sum: number, v: any) => sum + v.eigenvalue, 0)
+    const explainedVariance = selectedVectors.map((v: any) => (v.eigenvalue / totalVariance) * 100)
+    const eigenvalues = selectedVectors.map((v: any) => v.eigenvalue)
+    
+    // 누적 설명 분산 계산
+    const cumulativeVariance = explainedVariance.reduce((acc: number[], val: number, index: number) => {
+      acc.push((acc[index - 1] || 0) + val)
+      return acc
+    }, [] as number[])
+    
+    // PC 점수 (scores) 추출
+    const scores = adjustedData.adjustedData[0] ? 
+      cleanData.map((_: any, rowIndex: number) => 
+        selectedVectors.map((_: any, compIndex: number) => adjustedData.adjustedData[compIndex][rowIndex])
+      ) : 
+      cleanData.map(() => new Array(finalNComponents).fill(0))
+    
+    // 로딩 (변수별 기여도) 계산
+    const loadings = selectedVectors.map((vector: any) => vector.vector.slice(0, variableNames.length))
+    
+    return {
+      scores: scores,
+      loadings: loadings,
+      explainedVariance: explainedVariance,
+      cumulativeVariance: cumulativeVariance,
+      eigenvalues: eigenvalues,
+      variableNames: variableNames,
+      nComponents: finalNComponents
+    }
+    
+  } catch (error) {
+    console.error('PCA calculation error:', error)
+    throw new Error(`PCA 계산 중 오류가 발생했습니다: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
 } 

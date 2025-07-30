@@ -104,4 +104,14 @@ export interface ScanSummary {
   scanOptions: ScanOptions
   aiRecommendationsUsed?: boolean
   aiRecommendationsCount?: number
+}
+
+export interface PCAResult {
+  scores: number[][]  // PC scores for each observation
+  loadings: number[][]  // PC loadings for each variable
+  explainedVariance: number[]  // Explained variance for each PC
+  cumulativeVariance: number[]  // Cumulative explained variance
+  eigenvalues: number[]  // Eigenvalues
+  variableNames: string[]  // Names of original variables
+  nComponents: number  // Number of components
 } 

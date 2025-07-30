@@ -293,30 +293,40 @@ export default function ScanMode({
       return
     }
 
-    // 추천된 변수들만 분석하도록 excludeColumns 설정
-    const variablesToExclude = data.numericColumns.filter(col => !variables.includes(col))
-    
-    setScanOptions(prev => ({
-      ...prev,
-      excludeColumns: variablesToExclude,
-      aiRecommendationsOnly: false // PCA 조합은 모든 조합을 분석
-    }))
-
-    // 스캔 실행 알림
-    alert(`PCA 추천 변수들 (${variables.join(', ')})로 분석을 시작합니다.`)
-
-    // 약간의 딜레이 후 스캔 실행 (상태 업데이트 반영)
-    setTimeout(() => {
-      performScan()
+    try {
+      // PCA 분석 실행
+      const { performPCA } = await import('@/lib/statistics')
+      const pcaResult = performPCA(data.data, variables, 2)
       
-      // 스캔 완료 후 결과 영역으로 자동 스크롤
-      setTimeout(() => {
-        const resultsSection = document.querySelector('[data-scan-results]')
-        if (resultsSection) {
-          resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      // PC1, PC2를 데이터에 추가
+      const enhancedData = data.data.map((row: Record<string, any>, index: number) => {
+        const scores = pcaResult.scores[index]
+        return {
+          ...row,
+          PC1: scores ? scores[0] : 0,
+          PC2: scores ? scores[1] : 0
         }
-      }, 1000)
-    }, 200)
+      })
+
+      // 기존 데이터 업데이트 (PC1, PC2 추가)
+      const updatedData = {
+        ...data,
+        data: enhancedData,
+        numericColumns: [...data.numericColumns, 'PC1', 'PC2']
+      }
+
+                    // PCA 결과 정보 표시
+       const varianceInfo = `PC1: ${pcaResult.explainedVariance[0]?.toFixed(1)}%, PC2: ${pcaResult.explainedVariance[1]?.toFixed(1)}%`
+       const loadingsInfo = pcaResult.loadings.map((loading, compIndex) => 
+         `PC${compIndex + 1}: ${variables.map((v, i) => `${v}(${loading[i]?.toFixed(2)})`).join(', ')}`
+       ).join('\n')
+       
+       alert(`🎉 PCA 분석 완료!\n\n✅ 선택 변수: ${variables.join(', ')}\n📊 설명 분산: ${varianceInfo}\n\n🔍 주성분 로딩:\n${loadingsInfo}\n\n💡 이 결과를 바탕으로 데이터 해석을 진행하세요!`)
+      
+    } catch (error) {
+      console.error('PCA Analysis Error:', error)
+      alert(`❌ PCA 분석 중 오류가 발생했습니다:\n${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
   }
 
   // 선택된 변수들로 분석 실행

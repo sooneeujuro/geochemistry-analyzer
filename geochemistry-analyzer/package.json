@@ -1,6 +1,6 @@
 {
   "name": "geochemistry-analyzer",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -16,6 +16,7 @@
     "lucide-react": "^0.292.0",
     "next": "14.0.0",
     "papaparse": "^5.4.1",
+    "pca-js": "^1.0.2",
     "react": "^18",
     "react-dom": "^18",
     "recharts": "^2.8.0",
