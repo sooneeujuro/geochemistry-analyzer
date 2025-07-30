@@ -70,6 +70,16 @@ const CustomMarker = (props: any) => {
 
 export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMode = false, clusterData = [] }: ScatterPlotProps) {
   const chartRef = useRef<HTMLDivElement>(null)
+  
+  // 디버깅: PCA 모드 및 클러스터 데이터 확인
+  console.log('ScatterPlot 렌더링:', {
+    isPCAMode,
+    clusterDataLength: clusterData.length,
+    dataLength: data.data.length,
+    selectedColumns: selectedColumns,
+    sampleClusterData: clusterData.slice(0, 10)
+  })
+  
   const [styleOptions, setStyleOptions] = useState<ChartStyleOptions>({
     numberFormat: 'normal',
     fontFamily: 'Arial',
@@ -171,6 +181,19 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
       .filter(point => !isNaN(point.x) && !isNaN(point.y) && isFinite(point.x) && isFinite(point.y))
   }, [data, selectedColumns, isPCAMode, clusterData])
 
+  // 디버깅: 차트 데이터 생성 결과 확인
+  useEffect(() => {
+    if (chartData.length > 0) {
+      console.log('차트 데이터 생성 완료:', {
+        chartDataLength: chartData.length,
+        isPCAMode,
+        clusterDataLength: clusterData.length,
+        sampleTypes: chartData.slice(0, 5).map(d => d.type),
+        uniqueTypes: Array.from(new Set(chartData.map(d => d.type)))
+      })
+    }
+  }, [chartData, isPCAMode, clusterData])
+  
   // 데이터 범위 자동 계산
   useEffect(() => {
     if (chartData.length > 0) {

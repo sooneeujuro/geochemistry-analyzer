@@ -108,17 +108,31 @@ export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelPr
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* 산점도 */}
             <div className="lg:col-span-2">
-              <ScatterPlot
-                data={data}
-                selectedColumns={selectedColumns}
-                statistics={statistics}
-                isPCAMode={
-                  selectedColumns.x?.numerator === 'PC1' && 
-                  selectedColumns.y?.numerator === 'PC2' && 
-                  data.pcaResult !== undefined
-                }
-                clusterData={data.pcaResult?.clusters || []}
-              />
+              {(() => {
+                const isPCAMode = selectedColumns.x?.numerator === 'PC1' && 
+                                  selectedColumns.y?.numerator === 'PC2' && 
+                                  data.pcaResult !== undefined
+                const clusterData = data.pcaResult?.clusters || []
+                
+                console.log('AnalysisPanel - PCA 모드 체크:', {
+                  xColumn: selectedColumns.x?.numerator,
+                  yColumn: selectedColumns.y?.numerator,
+                  hasPcaResult: !!data.pcaResult,
+                  isPCAMode,
+                  clusterDataLength: clusterData.length,
+                  pcaResultKeys: data.pcaResult ? Object.keys(data.pcaResult) : []
+                })
+                
+                return (
+                  <ScatterPlot
+                    data={data}
+                    selectedColumns={selectedColumns}
+                    statistics={statistics}
+                    isPCAMode={isPCAMode}
+                    clusterData={clusterData}
+                  />
+                )
+              })()}
             </div>
 
             {/* PCA 결과 상세 표 (PCA 모드일 때만 표시) */}

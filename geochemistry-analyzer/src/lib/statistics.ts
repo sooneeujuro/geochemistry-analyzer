@@ -402,9 +402,35 @@ export function performPCA(
         return typeof val === 'number' && !isNaN(val) && isFinite(val) ? val : null
       })
       
-      // 모든 변수가 유효한 값을 가진 행만 포함
-      if (values.every(val => val !== null)) {
-        cleanData.push(values as number[])
+      // 완화된 조건: 최소 80%의 변수가 유효하면 포함 (단, 최소 2개 변수는 필요)
+      const validCount = values.filter(val => val !== null).length
+      const minRequiredValid = Math.max(2, Math.ceil(variableNames.length * 0.8))
+      
+      if (validCount >= minRequiredValid) {
+        // 결측값을 해당 변수의 평균값으로 대체
+        const filledValues = values.map((val, varIndex) => {
+          if (val !== null) return val
+          
+          // 해당 변수의 유효한 값들의 평균 계산
+          const varName = variableNames[varIndex]
+          const validValues = data
+            .map(r => {
+              const v = r[varName]
+              if (typeof v === 'string' && v.trim() !== '') {
+                const parsed = parseFloat(v.trim())
+                return !isNaN(parsed) && isFinite(parsed) ? parsed : null
+              }
+              return typeof v === 'number' && !isNaN(v) && isFinite(v) ? v : null
+            })
+            .filter(v => v !== null) as number[]
+          
+          // 평균값으로 대체 (유효한 값이 없으면 0으로 대체)
+          return validValues.length > 0 
+            ? validValues.reduce((sum, v) => sum + v, 0) / validValues.length 
+            : 0
+        })
+        
+        cleanData.push(filledValues)
       } else {
         invalidRows.push(rowIndex)
       }
