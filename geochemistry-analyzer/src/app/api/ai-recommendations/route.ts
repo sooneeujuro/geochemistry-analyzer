@@ -102,9 +102,28 @@ async function getOpenAIRecommendations({
   maxRecommendations: number
   apiKey: string
 }): Promise<AIRecommendation[]> {
-  const prompt = `Recommend ${Math.min(maxRecommendations, 5)} geochemical variable pairs from: ${columns.slice(0, 10).join(', ')}.
+  const prompt = `As a geochemistry expert, analyze these variables and recommend ${Math.min(maxRecommendations, 8)} scientifically meaningful pairs for correlation analysis:
 
-Return JSON: {"recommendations": [{"xColumn": "X", "yColumn": "Y", "reason": "brief reason", "confidence": 0.8}]}`
+Variables: ${columns.join(', ')}
+${sampleDescription ? `Context: ${sampleDescription}` : ''}
+
+Focus on:
+- Major/trace element correlations (SiO2-K2O, Rb-Sr, etc.)
+- Mineral chemistry relationships (Al2O3-CaO, MgO-FeO)
+- Petrogenetic processes (differentiation, alteration)
+- REE patterns if present
+
+Return JSON only:
+{
+  "recommendations": [
+    {
+      "xColumn": "element1", 
+      "yColumn": "element2",
+      "reason": "specific geochemical significance",
+      "confidence": 0.85
+    }
+  ]
+}`
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -113,10 +132,10 @@ Return JSON: {"recommendations": [{"xColumn": "X", "yColumn": "Y", "reason": "br
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'gpt-3.5-turbo',
+      model: 'gpt-4',
       messages: [{ role: 'user', content: prompt }],
-      max_tokens: 500,
-      temperature: 0.1,
+      max_tokens: 1000,
+      temperature: 0.3,
     }),
   })
 
@@ -132,7 +151,27 @@ Return JSON: {"recommendations": [{"xColumn": "X", "yColumn": "Y", "reason": "br
     return parsed.recommendations || []
   } catch {
     console.error('Failed to parse OpenAI response:', content)
-    return []
+    
+    // 실제 컬럼 기반 스마트 폴백
+    const fallbackPairs = []
+    const commonPairs = [
+      ['SiO2', 'Al2O3'], ['SiO2', 'K2O'], ['Al2O3', 'CaO'], 
+      ['MgO', 'FeO'], ['Rb', 'Sr'], ['Zr', 'Hf'], ['Y', 'Ho'],
+      ['TiO2', 'V'], ['Cr', 'Ni'], ['Ba', 'Rb']
+    ]
+    
+    for (const [x, y] of commonPairs) {
+      if (columns.includes(x) && columns.includes(y) && fallbackPairs.length < 3) {
+        fallbackPairs.push({
+          xColumn: x,
+          yColumn: y,
+          reason: `${x}-${y} geochemical correlation`,
+          confidence: 0.7
+        })
+      }
+    }
+    
+    return fallbackPairs.length > 0 ? fallbackPairs : []
   }
 }
 
@@ -148,9 +187,14 @@ async function getGoogleAIRecommendations({
   maxRecommendations: number
   apiKey: string
 }): Promise<AIRecommendation[]> {
-  const prompt = `Recommend ${Math.min(maxRecommendations, 5)} geochemically significant variable pairs from: ${columns.slice(0, 10).join(', ')}.
+  const prompt = `Geochemistry expert: Recommend ${Math.min(maxRecommendations, 8)} scientifically meaningful variable pairs from: ${columns.join(', ')}
 
-Return JSON: {"recommendations": [{"xColumn": "X", "yColumn": "Y", "reason": "brief reason", "confidence": 0.8}]}`
+${sampleDescription ? `Sample: ${sampleDescription}` : ''}
+
+Consider major elements (SiO2, Al2O3, etc.), trace elements, REE patterns, and mineral chemistry. 
+
+JSON format:
+{"recommendations": [{"xColumn": "actual_variable", "yColumn": "actual_variable", "reason": "geochemical significance", "confidence": 0.8}]}`
 
   const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
     method: 'POST',
@@ -188,21 +232,26 @@ Return JSON: {"recommendations": [{"xColumn": "X", "yColumn": "Y", "reason": "br
   } catch (error) {
     console.error('Failed to parse Google AI JSON response')
     
-    // 간단한 폴백 추천사항 반환
-    return [
-      {
-        xColumn: "SiO2",
-        yColumn: "Al2O3",
-        reason: "Primary silicate mineral correlation",
-        confidence: 0.8
-      },
-      {
-        xColumn: "MgO", 
-        yColumn: "FeO",
-        reason: "Mafic mineral correlation",
-        confidence: 0.7
-      }
+    // 실제 컬럼 기반 스마트 폴백
+    const fallbackPairs = []
+    const commonPairs = [
+      ['SiO2', 'Al2O3'], ['SiO2', 'K2O'], ['Al2O3', 'CaO'], 
+      ['MgO', 'FeO'], ['Rb', 'Sr'], ['Zr', 'Hf'], ['Y', 'Ho'],
+      ['TiO2', 'V'], ['Cr', 'Ni'], ['Ba', 'Rb']
     ]
+    
+    for (const [x, y] of commonPairs) {
+      if (columns.includes(x) && columns.includes(y) && fallbackPairs.length < 3) {
+        fallbackPairs.push({
+          xColumn: x,
+          yColumn: y,
+          reason: `${x}-${y} geochemical correlation`,
+          confidence: 0.7
+        })
+      }
+    }
+    
+    return fallbackPairs.length > 0 ? fallbackPairs : []
   }
 }
 
