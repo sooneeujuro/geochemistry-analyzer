@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { GeochemData, ScanResult, ScanOptions, ScanSummary } from '@/types/geochem'
 import { calculateStatistics } from '@/lib/statistics'
-import { getAIRecommendations, estimateAPICost, AIRecommendation } from '@/lib/ai-recommendations'
+import { estimateAPICost, AIRecommendation } from '@/lib/ai-recommendations'
 import ScanResultCard from './ScanResultCard'
 import PDFReport from './PDFReport'
 import { Play, Settings, Download, Filter, TrendingUp, AlertCircle, ChevronLeft, ChevronRight, RotateCcw, Brain, Key, DollarSign, FileText } from 'lucide-react'
@@ -45,24 +45,13 @@ export default function ScanMode({
     selectedTypeColumn: selectedTypeColumn,
     useAIRecommendations: false,
     aiProvider: 'google',
-    openaiApiKey: '',
-    googleApiKey: '',
     sampleDescription: '',
     aiRecommendationsOnly: false
   })
 
-  // 로컬 스토리지에서 API 키 로드 (안전한 방식)
+  // API 키는 이제 백엔드에서 안전하게 관리됩니다
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const openaiKey = localStorage.getItem('geochemistry_openai_key') || ''
-      const googleKey = localStorage.getItem('geochemistry_google_key') || ''
-      
-      setScanOptions(prev => ({
-        ...prev,
-        openaiApiKey: openaiKey,
-        googleApiKey: googleKey
-      }))
-    }
+    // 더 이상 localStorage에서 API 키를 로드하지 않습니다
   }, [])
   
   // AI 관련 상태
@@ -120,30 +109,36 @@ export default function ScanMode({
     }
   }
 
-  // AI 추천 받기
+  // AI 추천 받기 (백엔드 API 호출)
   const getAIRecommendationsList = async () => {
-    const apiKey = scanOptions.aiProvider === 'openai' ? scanOptions.openaiApiKey : scanOptions.googleApiKey
-    
-    if (!apiKey?.trim()) {
-      setAiError(`${scanOptions.aiProvider === 'openai' ? 'OpenAI' : 'Google AI'} API 키를 입력해주세요.`)
-      return
-    }
-
     setIsLoadingAI(true)
     setAiError(null)
 
     try {
-      const recommendations = await getAIRecommendations({
-        numericColumns: analysisColumns,
-        sampleDescription: scanOptions.sampleDescription,
-        rockTypes: data.typeColumn ? Array.from(new Set(data.data.map(row => row[data.typeColumn!]))) : undefined,
-        apiKey,
-        provider: scanOptions.aiProvider!
+      // 백엔드 API 호출 (안전함)
+      const response = await fetch('/api/ai-recommendations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          columns: analysisColumns,
+          sampleDescription: scanOptions.sampleDescription || '',
+          provider: scanOptions.aiProvider!,
+          maxRecommendations: 10
+        })
       })
 
-      setAiRecommendations(recommendations)
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || `API 호출 실패: ${response.status}`)
+      }
+
+      const result = await response.json()
+      setAiRecommendations(result.recommendations || [])
       setAiError(null)
     } catch (error) {
+      console.error('AI Recommendations Error:', error)
       setAiError(error instanceof Error ? error.message : 'AI 추천을 받는데 실패했습니다.')
     } finally {
       setIsLoadingAI(false)
@@ -474,46 +469,23 @@ export default function ScanMode({
                 </div>
               </div>
 
-              {/* API 키 입력 */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  <Key className="h-4 w-4 inline mr-1" />
-                  {scanOptions.aiProvider === 'openai' ? 'OpenAI API 키' : 'Google AI API 키'}
-                </label>
-                                  <input
-                    type="password"
-                    placeholder={scanOptions.aiProvider === 'openai' ? 'sk-...' : 'AIza...'}
-                    value={scanOptions.aiProvider === 'openai' ? scanOptions.openaiApiKey || '' : scanOptions.googleApiKey || ''}
-                    onChange={(e) => {
-                      const newKey = e.target.value
-                      const keyName = scanOptions.aiProvider === 'openai' ? 'openaiApiKey' : 'googleApiKey'
-                      const storageKey = scanOptions.aiProvider === 'openai' ? 'geochemistry_openai_key' : 'geochemistry_google_key'
-                      
-                      // 로컬 스토리지에 저장
-                      if (newKey) {
-                        localStorage.setItem(storageKey, newKey)
-                      } else {
-                        localStorage.removeItem(storageKey)
-                      }
-                      
-                      setScanOptions({
-                        ...scanOptions,
-                        [keyName]: newKey
-                      })
-                    }}
-                    className="w-full p-2 border border-gray-300 rounded-md text-sm"
-                  />
-                                  <div className="text-xs text-gray-500 mt-1">
-                    <p>
-                      {scanOptions.aiProvider === 'openai' 
-                        ? 'OpenAI API 키가 필요합니다. platform.openai.com에서 발급받으세요.'
-                        : 'Google AI Studio에서 발급받은 API 키가 필요합니다. aistudio.google.com'
-                      }
-                    </p>
-                    <p className="text-green-600 mt-1">
-                      🔒 API 키는 브라우저에만 저장되며 완전히 안전합니다.
-                    </p>
-                  </div>
+              {/* 서비스 안내 */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-center mb-2">
+                  <Key className="h-4 w-4 text-blue-600 mr-2" />
+                  <span className="text-sm font-medium text-blue-800">
+                    🔒 안전한 AI 서비스
+                  </span>
+                </div>
+                <p className="text-xs text-blue-700">
+                  API 키는 서버에서 안전하게 관리됩니다. 별도 설정 없이 바로 이용 가능합니다.
+                </p>
+                <p className="text-xs text-blue-600 mt-1">
+                  {scanOptions.aiProvider === 'openai' 
+                    ? '🤖 OpenAI GPT-4로 고품질 지구화학 분석 제공'
+                    : '🧠 Google Gemini로 빠르고 정확한 분석 제공'
+                  }
+                </p>
               </div>
 
               {/* 샘플 설명 */}
@@ -537,7 +509,7 @@ export default function ScanMode({
               <div className="flex items-center justify-between">
                 <button
                   onClick={getAIRecommendationsList}
-                  disabled={isLoadingAI || !(scanOptions.aiProvider === 'openai' ? scanOptions.openaiApiKey?.trim() : scanOptions.googleApiKey?.trim())}
+                  disabled={isLoadingAI}
                   className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center text-sm"
                 >
                   {isLoadingAI ? (

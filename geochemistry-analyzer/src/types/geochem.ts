@@ -91,8 +91,6 @@ export interface ScanOptions {
   selectedTypeColumn?: string
   useAIRecommendations?: boolean
   aiProvider?: 'openai' | 'google'
-  openaiApiKey?: string
-  googleApiKey?: string
   sampleDescription?: string
   aiRecommendationsOnly?: boolean
 }
