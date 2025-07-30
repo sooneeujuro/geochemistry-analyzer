@@ -1,13 +1,9 @@
 export interface GeochemData {
   data: Record<string, any>[]
-  columns: string[]
   numericColumns: string[]
-  typeColumn?: string
-  metadata: {
-    fileName: string
-    rowCount: number
-    columnCount: number
-  }
+  nonNumericColumns: string[]
+  fileName: string
+  pcaResult?: PCAResult  // PCA 분석 결과 (선택사항)
 }
 
 export interface StatisticalResult {
@@ -114,4 +110,5 @@ export interface PCAResult {
   eigenvalues: number[]  // Eigenvalues
   variableNames: string[]  // Names of original variables
   nComponents: number  // Number of components
+  clusters: number[]  // Cluster assignments for each observation
 } 

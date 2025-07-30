@@ -111,6 +111,12 @@ export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelPr
                 data={data}
                 selectedColumns={selectedColumns}
                 statistics={statistics}
+                isPCAMode={
+                  selectedColumns.x?.numerator === 'PC1' && 
+                  selectedColumns.y?.numerator === 'PC2' && 
+                  data.pcaResult !== undefined
+                }
+                clusterData={data.pcaResult?.clusters || []}
               />
             </div>
 

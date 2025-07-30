@@ -441,6 +441,10 @@ export function performPCA(
     // 로딩 (변수별 기여도) 계산
     const loadings = selectedVectors.map((vector: any) => vector.vector.slice(0, variableNames.length))
     
+    // K-means 클러스터링 수행
+    const k = findOptimalClusters(scores.map(row => row.slice(0, 2))); // 첫 두 컴포넌트만 사용
+    const clusters = kMeansClustering(scores, k);
+    
     return {
       scores: scores,
       loadings: loadings,
@@ -448,11 +452,113 @@ export function performPCA(
       cumulativeVariance: cumulativeVariance,
       eigenvalues: eigenvalues,
       variableNames: variableNames,
-      nComponents: finalNComponents
+      nComponents: finalNComponents,
+      clusters: clusters
     }
     
   } catch (error) {
     console.error('PCA calculation error:', error)
     throw new Error(`PCA 계산 중 오류가 발생했습니다: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
+} 
+
+// K-means 클러스터링 함수
+function kMeansClustering(data: number[][], k: number, maxIterations: number = 100): number[] {
+  if (data.length === 0 || k <= 0) return []
+  
+  // 초기 중심점 설정 (랜덤)
+  const centroids: number[][] = []
+  for (let i = 0; i < k; i++) {
+    const randomIndex = Math.floor(Math.random() * data.length)
+    centroids.push([...data[randomIndex]])
+  }
+  
+  let clusters: number[] = new Array(data.length).fill(0)
+  
+  for (let iter = 0; iter < maxIterations; iter++) {
+    let changed = false
+    
+    // 각 데이터 포인트를 가장 가까운 중심점에 할당
+    for (let i = 0; i < data.length; i++) {
+      let minDistance = Infinity
+      let bestCluster = 0
+      
+      for (let j = 0; j < k; j++) {
+        const distance = Math.sqrt(
+          Math.pow(data[i][0] - centroids[j][0], 2) + 
+          Math.pow(data[i][1] - centroids[j][1], 2)
+        )
+        
+        if (distance < minDistance) {
+          minDistance = distance
+          bestCluster = j
+        }
+      }
+      
+      if (clusters[i] !== bestCluster) {
+        clusters[i] = bestCluster
+        changed = true
+      }
+    }
+    
+    // 중심점 업데이트
+    for (let j = 0; j < k; j++) {
+      const clusterPoints = data.filter((_, index) => clusters[index] === j)
+      if (clusterPoints.length > 0) {
+        centroids[j][0] = clusterPoints.reduce((sum, point) => sum + point[0], 0) / clusterPoints.length
+        centroids[j][1] = clusterPoints.reduce((sum, point) => sum + point[1], 0) / clusterPoints.length
+      }
+    }
+    
+    if (!changed) break
+  }
+  
+  return clusters
+}
+
+// 최적 클러스터 수 결정 (엘보우 방법)
+function findOptimalClusters(data: number[][], maxK: number = 6): number {
+  if (data.length < 4) return 2
+  
+  const wcss: number[] = []
+  
+  for (let k = 1; k <= Math.min(maxK, Math.floor(data.length / 2)); k++) {
+    const clusters = kMeansClustering(data, k)
+    let totalWCSS = 0
+    
+    // 각 클러스터의 WCSS 계산
+    for (let cluster = 0; cluster < k; cluster++) {
+      const clusterPoints = data.filter((_, index) => clusters[index] === cluster)
+      if (clusterPoints.length === 0) continue
+      
+      // 클러스터 중심점 계산
+      const centroidX = clusterPoints.reduce((sum, point) => sum + point[0], 0) / clusterPoints.length
+      const centroidY = clusterPoints.reduce((sum, point) => sum + point[1], 0) / clusterPoints.length
+      
+      // 클러스터 내 거리 제곱합
+      const clusterWCSS = clusterPoints.reduce((sum, point) => {
+        return sum + Math.pow(point[0] - centroidX, 2) + Math.pow(point[1] - centroidY, 2)
+      }, 0)
+      
+      totalWCSS += clusterWCSS
+    }
+    
+    wcss.push(totalWCSS)
+  }
+  
+  // 엘보우 포인트 찾기 (간단한 방법)
+  let optimalK = 2
+  if (wcss.length > 2) {
+    for (let i = 1; i < wcss.length - 1; i++) {
+      const prevSlope = wcss[i] - wcss[i - 1]
+      const nextSlope = wcss[i + 1] - wcss[i]
+      
+      if (Math.abs(prevSlope) > Math.abs(nextSlope) * 2) {
+        optimalK = i + 1
+        break
+      }
+    }
+  }
+  
+  return Math.max(2, Math.min(optimalK, 4)) // 2-4 클러스터로 제한
 } 

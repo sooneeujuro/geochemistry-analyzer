@@ -302,21 +302,23 @@ export default function ScanMode({
       const { performPCA } = await import('@/lib/statistics')
       const pcaResult = performPCA(data.data, variables, 2) // 2 주성분 계산
       
-      // PC1, PC2를 데이터에 추가
+      // PC1, PC2와 클러스터 정보를 데이터에 추가
       const enhancedData = data.data.map((row: Record<string, any>, index: number) => {
         const scores = pcaResult.scores[index]
         return {
           ...row,
           PC1: scores ? scores[0] : 0,
-          PC2: scores ? scores[1] : 0
+          PC2: scores ? scores[1] : 0,
+          PCA_Cluster: pcaResult.clusters[index] || 0  // 클러스터 정보 추가
         }
       })
 
-      // 기존 데이터 업데이트 (PC1, PC2 추가)
+      // 기존 데이터 업데이트 (PC1, PC2, 클러스터 정보 추가)
       const updatedData = {
         ...data,
         data: enhancedData,
-        numericColumns: [...data.numericColumns.filter(col => col !== 'PC1' && col !== 'PC2'), 'PC1', 'PC2']
+        numericColumns: [...data.numericColumns.filter(col => col !== 'PC1' && col !== 'PC2'), 'PC1', 'PC2'],
+        pcaResult: pcaResult  // PCA 결과 전체 저장
       }
 
       // 데이터 업데이트 함수가 있다면 호출 (부모 컴포넌트의 데이터 업데이트)
@@ -337,6 +339,7 @@ export default function ScanMode({
       const loadingsInfo = pcaResult.loadings.map((loading, compIndex) => 
         `PC${compIndex + 1}: ${variables.map((v, i) => `${v}(${loading[i]?.toFixed(2)})`).join(', ')}`
       ).join('\n')
+      const clusterInfo = `발견된 군집 수: ${Math.max(...pcaResult.clusters) + 1}개`
       
       // 스캔 결과 자동 스크롤
       setTimeout(() => {
@@ -346,7 +349,7 @@ export default function ScanMode({
         }
       }, 100)
       
-      alert(`🎉 PCA 분석 완료!\n\n✅ 선택 변수: ${variables.join(', ')}\n📊 설명 분산: ${varianceInfo}\n\n🔍 주성분 로딩:\n${loadingsInfo}\n\n💡 PC1 vs PC2 그래프가 분석 패널에 표시됩니다.\n🖱️ 그래프를 자유롭게 조작해보세요!`)
+      alert(`🎉 PCA 분석 완료!\n\n✅ 선택 변수: ${variables.join(', ')}\n📊 설명 분산: ${varianceInfo}\n🎯 ${clusterInfo}\n\n🔍 주성분 로딩:\n${loadingsInfo}\n\n💡 PC1 vs PC2 그래프가 분석 패널에 표시됩니다.\n🖱️ 클러스터별로 색칠된 그래프를 조작해보세요!`)
       
     } catch (error) {
       console.error('PCA Analysis Error:', error)

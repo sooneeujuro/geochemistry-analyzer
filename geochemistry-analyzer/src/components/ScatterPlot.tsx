@@ -9,6 +9,8 @@ interface ScatterPlotProps {
   data: GeochemData
   selectedColumns: ColumnSelection
   statistics: StatisticalResult
+  isPCAMode?: boolean  // PCA 모드 여부
+  clusterData?: number[]  // 클러스터 할당 데이터
 }
 
 // 커스텀 마커 컴포넌트
@@ -66,7 +68,7 @@ const CustomMarker = (props: any) => {
   }
 }
 
-export default function ScatterPlot({ data, selectedColumns, statistics }: ScatterPlotProps) {
+export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMode = false, clusterData = [] }: ScatterPlotProps) {
   const chartRef = useRef<HTMLDivElement>(null)
   const [styleOptions, setStyleOptions] = useState<ChartStyleOptions>({
     numberFormat: 'normal',
@@ -90,6 +92,36 @@ export default function ScatterPlot({ data, selectedColumns, statistics }: Scatt
   const [showExportDialog, setShowExportDialog] = useState(false)
   const [exportFormat, setExportFormat] = useState<'png' | 'svg'>('png')
   const [customFileName, setCustomFileName] = useState('')
+  
+  // PCA 전용 클러스터 색상 (구분하기 쉬운 색상)
+  const pcaClusterColors = [
+    '#E53E3E', // 빨강
+    '#3182CE', // 파랑  
+    '#38A169', // 초록
+    '#D69E2E', // 황금
+    '#805AD5', // 보라
+    '#DD6B20', // 주황
+    '#319795', // 청록
+    '#E53E3E'  // 핑크
+  ]
+  
+  // 색상 선택 로직
+  const getColorForType = (type: string, index: number) => {
+    if (isPCAMode) {
+      // PCA 모드: 클러스터별 색상 사용
+      const clusterIndex = parseInt(type.replace('Cluster ', '')) - 1
+      return pcaClusterColors[clusterIndex % pcaClusterColors.length]
+    } else {
+      // 일반 모드: 기존 로직 사용
+      if (plotOptions.useCustomColors) {
+        return plotOptions.customColors[index % plotOptions.customColors.length]
+      } else {
+        // 기본 Recharts 색상
+        const defaultColors = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#d084d0']
+        return defaultColors[index % defaultColors.length]
+      }
+    }
+  }
   
   // 축 범위 상태
   const [xAxisRange, setXAxisRange] = useState<AxisRange>({ auto: true, min: 0, max: 100 })
@@ -123,14 +155,16 @@ export default function ScatterPlot({ data, selectedColumns, statistics }: Scatt
         return {
           x: xValue,
           y: yValue,
-          type: selectedColumns.useTypeColumn && selectedColumns.selectedTypeColumn 
-            ? row[selectedColumns.selectedTypeColumn] 
-            : 'default',
+          type: isPCAMode && clusterData.length > index
+            ? `Cluster ${clusterData[index] + 1}`  // PCA 모드: 클러스터별 그룹핑
+            : selectedColumns.useTypeColumn && selectedColumns.selectedTypeColumn 
+              ? row[selectedColumns.selectedTypeColumn] 
+              : 'default',
           index
         }
       })
       .filter(point => !isNaN(point.x) && !isNaN(point.y) && isFinite(point.x) && isFinite(point.y))
-  }, [data, selectedColumns])
+  }, [data, selectedColumns, isPCAMode, clusterData])
 
   // 데이터 범위 자동 계산
   useEffect(() => {
