@@ -7,7 +7,7 @@ import { TrendingUp, TrendingDown, Minus, CheckCircle } from 'lucide-react'
 
 interface ScanResultCardProps {
   result: ScanResult
-  onSelect: () => void
+  onSelect: (xColumn: string, yColumn: string) => void
   includeTypeColumn?: boolean
   selectedTypeColumn?: string
   compact?: boolean
@@ -65,7 +65,7 @@ export default function ScanResultCard({
 
   return (
     <div 
-      onClick={onSelect}
+      onClick={() => onSelect(result.xColumn, result.yColumn)}
       className={`bg-white border rounded-lg p-4 cursor-pointer transition-all hover:shadow-lg hover:border-blue-300 ${
         result.isSignificant 
           ? 'border-green-300 bg-green-50' 

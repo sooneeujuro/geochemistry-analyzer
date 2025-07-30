@@ -3,9 +3,9 @@
 import { useState, useEffect, useMemo } from 'react'
 import { GeochemData, ScanResult, ScanOptions, ScanSummary } from '@/types/geochem'
 import { calculateStatistics } from '@/lib/statistics'
+import { getAIRecommendations, estimateAPICost, AIRecommendation } from '@/lib/ai-recommendations'
 import ScanResultCard from './ScanResultCard'
-// import ScanReport from './ScanReport' // 임시 비활성화
-import { Play, Settings, Download, Filter, TrendingUp, AlertCircle, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react'
+import { Play, Settings, Download, Filter, TrendingUp, AlertCircle, ChevronLeft, ChevronRight, RotateCcw, Brain, Key, DollarSign } from 'lucide-react'
 
 interface ScanModeProps {
   data: GeochemData
@@ -32,7 +32,6 @@ export default function ScanMode({
   const scanResults = externalScanResults
   const scanSummary = externalScanSummary
   const [showOptions, setShowOptions] = useState(false)
-  const [showReport, setShowReport] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [resultsPerPage] = useState(20) // 페이지당 결과 수
   const [scanOptions, setScanOptions] = useState<ScanOptions>({
@@ -41,8 +40,19 @@ export default function ScanMode({
     pThreshold: 0.05,
     excludeColumns: [],
     includeTypeColumn: !!selectedTypeColumn,
-    selectedTypeColumn: selectedTypeColumn
+    selectedTypeColumn: selectedTypeColumn,
+    useAIRecommendations: false,
+    aiProvider: 'google',
+    openaiApiKey: '',
+    googleApiKey: '',
+    sampleDescription: '',
+    aiRecommendationsOnly: false
   })
+  
+  // AI 관련 상태
+  const [aiRecommendations, setAiRecommendations] = useState<AIRecommendation[]>([])
+  const [isLoadingAI, setIsLoadingAI] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
 
   // 의미없는 컬럼들 자동 감지 (ID, 번호 등)
   const autoExcludeColumns = useMemo(() => {
@@ -94,9 +104,50 @@ export default function ScanMode({
     }
   }
 
+  // AI 추천 받기
+  const getAIRecommendationsList = async () => {
+    const apiKey = scanOptions.aiProvider === 'openai' ? scanOptions.openaiApiKey : scanOptions.googleApiKey
+    
+    if (!apiKey?.trim()) {
+      setAiError(`${scanOptions.aiProvider === 'openai' ? 'OpenAI' : 'Google AI'} API 키를 입력해주세요.`)
+      return
+    }
+
+    setIsLoadingAI(true)
+    setAiError(null)
+
+    try {
+      const recommendations = await getAIRecommendations({
+        numericColumns: analysisColumns,
+        sampleDescription: scanOptions.sampleDescription,
+        rockTypes: data.typeColumn ? Array.from(new Set(data.data.map(row => row[data.typeColumn!]))) : undefined,
+        apiKey,
+        provider: scanOptions.aiProvider!
+      })
+
+      setAiRecommendations(recommendations)
+      setAiError(null)
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : 'AI 추천을 받는데 실패했습니다.')
+    } finally {
+      setIsLoadingAI(false)
+    }
+  }
+
+  // 예상 비용 계산
+  const estimatedCost = useMemo(() => {
+    return estimateAPICost(analysisColumns.length, scanOptions.aiProvider || 'google')
+  }, [analysisColumns.length, scanOptions.aiProvider])
+
   const performScan = async () => {
     if (analysisColumns.length < 2) {
       alert('분석할 수치 컬럼이 최소 2개 이상 필요합니다.')
+      return
+    }
+
+    // AI 추천만 사용하는 경우, 추천이 있는지 확인
+    if (scanOptions.aiRecommendationsOnly && aiRecommendations.length === 0) {
+      alert('AI 추천을 먼저 받아주세요.')
       return
     }
 
@@ -106,59 +157,95 @@ export default function ScanMode({
     const results: ScanResult[] = []
 
     try {
-      // 모든 조합 생성 및 분석
-      for (let i = 0; i < analysisColumns.length; i++) {
-        for (let j = i + 1; j < analysisColumns.length; j++) {
-          const xColumn = analysisColumns[i]
-          const yColumn = analysisColumns[j]
-
-          // 데이터 추출
-          const validData = data.data
-            .map(row => ({
-              x: parseFloat(row[xColumn]),
-              y: parseFloat(row[yColumn]),
-              type: scanOptions.includeTypeColumn && scanOptions.selectedTypeColumn 
-                ? row[scanOptions.selectedTypeColumn] 
-                : 'default'
-            }))
-            .filter(point => !isNaN(point.x) && !isNaN(point.y) && isFinite(point.x) && isFinite(point.y))
-
-          if (validData.length < 3) continue
-
-          const xData = validData.map(d => d.x)
-          const yData = validData.map(d => d.y)
-
-          // 통계 계산
-          const statistics = calculateStatistics(xData, yData, scanOptions.statMethods)
-
-          // 유의성 판단
-          let isSignificant = false
-          for (const method of scanOptions.statMethods) {
-            const corrKey = `${method}Corr` as keyof typeof statistics
-            const pKey = `${method}P` as keyof typeof statistics
+      // 조합 생성: AI 추천만 사용 또는 모든 조합
+      let combinations: Array<{xColumn: string, yColumn: string, aiRecommended?: boolean, aiReason?: string, aiConfidence?: number}> = []
+      
+      if (scanOptions.aiRecommendationsOnly && aiRecommendations.length > 0) {
+        // AI 추천 조합만 사용
+        combinations = aiRecommendations.map(rec => ({
+          xColumn: rec.xColumn,
+          yColumn: rec.yColumn,
+          aiRecommended: true,
+          aiReason: rec.reason,
+          aiConfidence: rec.confidence
+        }))
+      } else {
+        // 모든 조합 생성
+        for (let i = 0; i < analysisColumns.length; i++) {
+          for (let j = i + 1; j < analysisColumns.length; j++) {
+            const xColumn = analysisColumns[i]
+            const yColumn = analysisColumns[j]
             
-            if (statistics[corrKey] && statistics[pKey]) {
-              const corr = Math.abs(statistics[corrKey] as number)
-              const p = statistics[pKey] as number
-              if (corr >= scanOptions.threshold && p <= scanOptions.pThreshold) {
-                isSignificant = true
-                break
-              }
+            // AI 추천이 있는지 확인
+            const aiRec = aiRecommendations.find(rec => 
+              (rec.xColumn === xColumn && rec.yColumn === yColumn) ||
+              (rec.xColumn === yColumn && rec.yColumn === xColumn)
+            )
+            
+            combinations.push({
+              xColumn,
+              yColumn,
+              aiRecommended: !!aiRec,
+              aiReason: aiRec?.reason,
+              aiConfidence: aiRec?.confidence
+            })
+          }
+        }
+      }
+
+      // 각 조합 분석
+      for (const combination of combinations) {
+        const { xColumn, yColumn, aiRecommended, aiReason, aiConfidence } = combination
+
+        // 데이터 추출
+        const validData = data.data
+          .map(row => ({
+            x: parseFloat(row[xColumn]),
+            y: parseFloat(row[yColumn]),
+            type: scanOptions.includeTypeColumn && scanOptions.selectedTypeColumn 
+              ? row[scanOptions.selectedTypeColumn] 
+              : 'default'
+          }))
+          .filter(point => !isNaN(point.x) && !isNaN(point.y) && isFinite(point.x) && isFinite(point.y))
+
+        if (validData.length < 3) continue
+
+        const xData = validData.map(d => d.x)
+        const yData = validData.map(d => d.y)
+
+        // 통계 계산
+        const statistics = calculateStatistics(xData, yData, scanOptions.statMethods)
+
+        // 유의성 판단
+        let isSignificant = false
+        for (const method of scanOptions.statMethods) {
+          const corrKey = `${method}Corr` as keyof typeof statistics
+          const pKey = `${method}P` as keyof typeof statistics
+          
+          if (statistics[corrKey] && statistics[pKey]) {
+            const corr = Math.abs(statistics[corrKey] as number)
+            const p = statistics[pKey] as number
+            if (corr >= scanOptions.threshold && p <= scanOptions.pThreshold) {
+              isSignificant = true
+              break
             }
           }
-
-          results.push({
-            id: `${xColumn}_${yColumn}`,
-            xColumn,
-            yColumn,
-            xLabel: xColumn,
-            yLabel: yColumn,
-            statistics,
-            isSignificant,
-            chartData: validData,
-            dataCount: validData.length
-          })
         }
+
+        results.push({
+          id: `${xColumn}_${yColumn}`,
+          xColumn,
+          yColumn,
+          xLabel: xColumn,
+          yLabel: yColumn,
+          statistics,
+          isSignificant,
+          chartData: validData,
+          dataCount: validData.length,
+          aiRecommended,
+          aiReason,
+          aiConfidence
+        })
       }
 
       // 결과 정렬 (유의미한 것들을 상관계수 순으로)
@@ -180,7 +267,9 @@ export default function ScanMode({
         topResults: results.filter(r => r.isSignificant).slice(0, 10),
         executionTime,
         fileName: data.metadata.fileName,
-        scanOptions
+        scanOptions,
+        aiRecommendationsUsed: scanOptions.useAIRecommendations,
+        aiRecommendationsCount: aiRecommendations.length
       }
       
       // 상위 컴포넌트로 결과 전달
@@ -217,32 +306,22 @@ export default function ScanMode({
               <Settings className="h-4 w-4 mr-1" />
               고급 설정
             </button>
-            {scanSummary && (
-              <button
-                onClick={() => setShowReport(true)}
-                className="px-3 py-2 text-sm bg-green-100 hover:bg-green-200 text-green-700 rounded-md flex items-center"
-              >
-                <Download className="h-4 w-4 mr-1" />
-                PDF 리포트
-              </button>
-            )}
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        {/* 스캔 통계 요약 */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="bg-blue-50 p-4 rounded-lg">
-            <div className="text-2xl font-bold text-blue-600">{analysisColumns.length}</div>
-            <div className="text-sm text-gray-600">분석 대상 컬럼</div>
+            <div className="text-2xl font-bold text-blue-600">{totalCombinations}</div>
+            <div className="text-sm text-gray-600">총 조합 수</div>
           </div>
           <div className="bg-green-50 p-4 rounded-lg">
-            <div className="text-2xl font-bold text-green-600">{totalCombinations}</div>
-            <div className="text-sm text-gray-600">전체 조합</div>
+            <div className="text-2xl font-bold text-green-600">{significantResults.length}</div>
+            <div className="text-sm text-gray-600">유의미한 조합</div>
           </div>
           <div className="bg-purple-50 p-4 rounded-lg">
-            <div className="text-2xl font-bold text-purple-600">
-              {scanSummary?.significantCombinations || 0}
-            </div>
-            <div className="text-sm text-gray-600">유의미한 조합</div>
+            <div className="text-2xl font-bold text-purple-600">{analysisColumns.length}</div>
+            <div className="text-sm text-gray-600">분석 대상 컬럼</div>
           </div>
         </div>
 
@@ -334,108 +413,158 @@ export default function ScanMode({
             </div>
           </div>
 
-          {/* 컬럼 배제 설정 */}
+          {/* AI 스마트 추천 설정 */}
           <div className="border-t border-gray-200 pt-6">
-            <div className="flex items-center justify-between mb-4">
-              <h4 className="text-md font-medium text-gray-800">분석에서 배제할 컬럼 선택</h4>
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => setScanOptions({
-                    ...scanOptions,
-                    excludeColumns: []
-                  })}
-                  className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-50 rounded"
-                >
-                  전체 선택 해제
-                </button>
-                <button
-                  onClick={() => setScanOptions({
-                    ...scanOptions,
-                    excludeColumns: [...data.numericColumns]
-                  })}
-                  className="text-xs px-2 py-1 text-red-600 hover:bg-red-50 rounded"
-                >
-                  전체 선택
-                </button>
-              </div>
+            <div className="flex items-center mb-4">
+              <Brain className="h-5 w-5 text-blue-600 mr-2" />
+              <h4 className="text-md font-medium text-gray-800">AI 스마트 추천</h4>
             </div>
             
-            {/* 자동 배제된 컬럼들 표시 */}
-            {autoExcludeColumns.length > 0 && (
-              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-                <div className="text-sm font-medium text-yellow-800 mb-2">
-                  자동 배제된 컬럼 (ID, 번호 등)
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {autoExcludeColumns.map((col) => (
-                    <span key={col} className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded">
-                      {col}
-                    </span>
-                  ))}
+            <div className="space-y-4">
+              {/* AI 제공자 선택 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  AI 제공자
+                </label>
+                <div className="flex space-x-4">
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="aiProvider"
+                      value="google"
+                      checked={scanOptions.aiProvider === 'google'}
+                      onChange={(e) => setScanOptions({
+                        ...scanOptions,
+                        aiProvider: e.target.value as 'google'
+                      })}
+                      className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                    />
+                    <span className="ml-2 text-sm">Google AI (Gemini) - 저렴함</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="aiProvider"
+                      value="openai"
+                      checked={scanOptions.aiProvider === 'openai'}
+                      onChange={(e) => setScanOptions({
+                        ...scanOptions,
+                        aiProvider: e.target.value as 'openai'
+                      })}
+                      className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                    />
+                    <span className="ml-2 text-sm">OpenAI (GPT-4) - 고품질</span>
+                  </label>
                 </div>
               </div>
-            )}
 
-            {/* 수동 배제 컬럼 선택 */}
-            <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-md p-3">
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                {data.numericColumns
-                  .filter(col => !autoExcludeColumns.includes(col))
-                  .map((column) => (
-                    <label
-                      key={column}
-                      className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
-                    >
+              {/* API 키 입력 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <Key className="h-4 w-4 inline mr-1" />
+                  {scanOptions.aiProvider === 'openai' ? 'OpenAI API 키' : 'Google AI API 키'}
+                </label>
+                <input
+                  type="password"
+                  placeholder={scanOptions.aiProvider === 'openai' ? 'sk-...' : 'AIza...'}
+                  value={scanOptions.aiProvider === 'openai' ? scanOptions.openaiApiKey || '' : scanOptions.googleApiKey || ''}
+                  onChange={(e) => setScanOptions({
+                    ...scanOptions,
+                    [scanOptions.aiProvider === 'openai' ? 'openaiApiKey' : 'googleApiKey']: e.target.value
+                  })}
+                  className="w-full p-2 border border-gray-300 rounded-md text-sm"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  {scanOptions.aiProvider === 'openai' 
+                    ? 'OpenAI API 키가 필요합니다. platform.openai.com에서 발급받으세요.'
+                    : 'Google AI Studio에서 발급받은 API 키가 필요합니다. aistudio.google.com'
+                  }
+                </p>
+              </div>
+
+              {/* 샘플 설명 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  샘플 설명 (선택사항)
+                </label>
+                <input
+                  type="text"
+                  placeholder="예: 화강암 샘플, 현무암 분석 데이터"
+                  value={scanOptions.sampleDescription || ''}
+                  onChange={(e) => setScanOptions({
+                    ...scanOptions,
+                    sampleDescription: e.target.value
+                  })}
+                  className="w-full p-2 border border-gray-300 rounded-md text-sm"
+                />
+              </div>
+
+              {/* AI 추천 받기 버튼 */}
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={getAIRecommendationsList}
+                  disabled={isLoadingAI || !(scanOptions.aiProvider === 'openai' ? scanOptions.openaiApiKey?.trim() : scanOptions.googleApiKey?.trim())}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center text-sm"
+                >
+                  {isLoadingAI ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      AI 분석 중...
+                    </>
+                  ) : (
+                    <>
+                      <Brain className="h-4 w-4 mr-2" />
+                      AI 추천 받기
+                    </>
+                  )}
+                </button>
+                
+                <div className="flex items-center text-xs text-gray-600">
+                  <DollarSign className="h-3 w-3 mr-1" />
+                  예상 비용: ~${estimatedCost.cost}
+                </div>
+              </div>
+
+              {/* AI 에러 표시 */}
+              {aiError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                  <div className="flex items-center">
+                    <AlertCircle className="h-4 w-4 text-red-600 mr-2" />
+                    <span className="text-sm text-red-800">{aiError}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* AI 추천 결과 */}
+              {aiRecommendations.length > 0 && (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-green-800">
+                      AI 추천 완료 ({aiRecommendations.length}개 조합)
+                    </span>
+                    <label className="flex items-center text-sm">
                       <input
                         type="checkbox"
-                        checked={scanOptions.excludeColumns.includes(column)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setScanOptions({
-                              ...scanOptions,
-                              excludeColumns: [...scanOptions.excludeColumns, column]
-                            })
-                          } else {
-                            setScanOptions({
-                              ...scanOptions,
-                              excludeColumns: scanOptions.excludeColumns.filter(col => col !== column)
-                            })
-                          }
-                        }}
-                        className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                        checked={scanOptions.aiRecommendationsOnly || false}
+                        onChange={(e) => setScanOptions({
+                          ...scanOptions,
+                          aiRecommendationsOnly: e.target.checked
+                        })}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
                       />
-                      <span className="text-sm text-gray-700 truncate" title={column}>
-                        {column}
-                      </span>
+                      추천 조합만 스캔
                     </label>
-                  ))}
-              </div>
-            </div>
-
-            {/* 선택된 배제 컬럼 요약 */}
-            {scanOptions.excludeColumns.length > 0 && (
-              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-md">
-                <div className="text-sm font-medium text-red-800 mb-2">
-                  배제할 컬럼 ({scanOptions.excludeColumns.length}개)
+                  </div>
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {aiRecommendations.map((rec, idx) => (
+                      <div key={idx} className="text-xs text-green-700 flex items-center justify-between">
+                        <span>{rec.xColumn} vs {rec.yColumn}</span>
+                        <span className="font-medium">신뢰도: {rec.confidence}/10</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-1">
-                  {scanOptions.excludeColumns.map((col) => (
-                    <span key={col} className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded">
-                      {col}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* 분석 대상 컬럼 수 표시 */}
-            <div className="mt-4 text-center">
-              <div className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
-                <span className="font-medium">분석 대상: {analysisColumns.length}개 컬럼</span>
-                <span className="ml-2 text-blue-600">
-                  ({totalCombinations}개 조합)
-                </span>
-              </div>
+              )}
             </div>
           </div>
         </div>
@@ -463,36 +592,32 @@ export default function ScanMode({
                 </h3>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {significantResults.map((result) => (
+                {significantResults.slice(0, 6).map((result) => (
                   <ScanResultCard
                     key={result.id}
                     result={result}
-                    onSelect={() => onResultSelect(result.xColumn, result.yColumn)}
+                    onSelect={onResultSelect}
                     includeTypeColumn={scanOptions.includeTypeColumn}
                     selectedTypeColumn={scanOptions.selectedTypeColumn}
+                    compact={true}
                   />
                 ))}
               </div>
             </div>
           )}
 
-          {/* 전체 결과들 (페이지네이션) */}
-          <div>
+          {/* 전체 결과 표시 */}
+          <div className="border-t border-gray-200 pt-6">
             <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center">
-                <AlertCircle className="h-5 w-5 text-gray-500 mr-2" />
-                <h3 className="text-lg font-medium text-gray-800">
-                  전체 결과 ({allResults.length}개)
-                </h3>
-              </div>
-              
-              {/* 페이지네이션 컨트롤 */}
+              <h3 className="text-lg font-medium text-gray-800">
+                전체 결과 ({allResults.length}개)
+              </h3>
               {totalPages > 1 && (
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
                     disabled={currentPage === 1}
-                    className="p-2 rounded-md border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                    className="p-2 text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed"
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </button>
@@ -502,59 +627,28 @@ export default function ScanMode({
                   <button
                     onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
                     disabled={currentPage === totalPages}
-                    className="p-2 rounded-md border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                    className="p-2 text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed"
                   >
                     <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
               )}
             </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {paginatedResults.map((result) => (
                 <ScanResultCard
                   key={result.id}
                   result={result}
-                  onSelect={() => onResultSelect(result.xColumn, result.yColumn)}
+                  onSelect={onResultSelect}
                   includeTypeColumn={scanOptions.includeTypeColumn}
                   selectedTypeColumn={scanOptions.selectedTypeColumn}
-                  compact
                 />
               ))}
             </div>
-            
-            {/* 페이지 정보 */}
-            {totalPages > 1 && (
-              <div className="mt-4 text-center text-sm text-gray-500">
-                {(currentPage - 1) * resultsPerPage + 1} - {Math.min(currentPage * resultsPerPage, allResults.length)} / {allResults.length} 결과
-              </div>
-            )}
           </div>
         </div>
       )}
-
-      {/* 로딩 상태 */}
-      {isScanning && (
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          <div className="flex flex-col items-center justify-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mb-4"></div>
-            <h3 className="text-lg font-medium text-gray-800 mb-2">스캔 진행 중...</h3>
-            <p className="text-gray-600 text-center">
-              {totalCombinations}개 조합을 분석하고 있습니다.<br />
-              잠시만 기다려주세요.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* PDF 리포트 모달 - 임시 비활성화 */}
-      {/* {showReport && scanSummary && (
-        <ScanReport
-          summary={scanSummary}
-          results={scanResults}
-          onClose={() => setShowReport(false)}
-        />
-      )} */}
     </div>
   )
 } 

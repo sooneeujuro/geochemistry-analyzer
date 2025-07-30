@@ -75,8 +75,11 @@ export interface ScanResult {
   yLabel: string
   statistics: StatisticalResult
   isSignificant: boolean
-  chartData: Array<{x: number, y: number, type: string}>
+  chartData: Array<{ x: number, y: number, type: string }>
   dataCount: number
+  aiRecommended?: boolean
+  aiReason?: string
+  aiConfidence?: number
 }
 
 export interface ScanOptions {
@@ -86,6 +89,12 @@ export interface ScanOptions {
   excludeColumns: string[]
   includeTypeColumn: boolean
   selectedTypeColumn?: string
+  useAIRecommendations?: boolean
+  aiProvider?: 'openai' | 'google'
+  openaiApiKey?: string
+  googleApiKey?: string
+  sampleDescription?: string
+  aiRecommendationsOnly?: boolean
 }
 
 export interface ScanSummary {
@@ -95,4 +104,6 @@ export interface ScanSummary {
   executionTime: number
   fileName: string
   scanOptions: ScanOptions
+  aiRecommendationsUsed?: boolean
+  aiRecommendationsCount?: number
 } 
