@@ -3,6 +3,7 @@ export interface GeochemData {
   numericColumns: string[]
   nonNumericColumns: string[]
   fileName: string
+  typeColumn?: string  // 타입 컬럼 (선택사항)
   pcaResult?: PCAResult  // PCA 분석 결과 (선택사항)
 }
 
