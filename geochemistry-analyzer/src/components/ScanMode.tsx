@@ -5,7 +5,8 @@ import { GeochemData, ScanResult, ScanOptions, ScanSummary } from '@/types/geoch
 import { calculateStatistics } from '@/lib/statistics'
 import { getAIRecommendations, estimateAPICost, AIRecommendation } from '@/lib/ai-recommendations'
 import ScanResultCard from './ScanResultCard'
-import { Play, Settings, Download, Filter, TrendingUp, AlertCircle, ChevronLeft, ChevronRight, RotateCcw, Brain, Key, DollarSign } from 'lucide-react'
+import PDFReport from './PDFReport'
+import { Play, Settings, Download, Filter, TrendingUp, AlertCircle, ChevronLeft, ChevronRight, RotateCcw, Brain, Key, DollarSign, FileText } from 'lucide-react'
 
 interface ScanModeProps {
   data: GeochemData
@@ -27,6 +28,7 @@ export default function ScanMode({
   onStartNewScan
 }: ScanModeProps) {
   const [isScanning, setIsScanning] = useState(false)
+  const [showPDFReport, setShowPDFReport] = useState(false)
   
   // 외부에서 받은 스캔 결과를 사용하거나, 없으면 빈 배열 사용
   const scanResults = externalScanResults
@@ -607,11 +609,20 @@ export default function ScanMode({
         <div className="bg-white rounded-lg shadow-lg p-6">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-semibold text-gray-800">스캔 결과</h2>
-            {scanSummary && (
-              <div className="text-sm text-gray-600">
-                실행 시간: {(scanSummary.executionTime / 1000).toFixed(1)}초
-              </div>
-            )}
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setShowPDFReport(true)}
+                className="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                <FileText className="h-4 w-4 mr-2" />
+                PDF 리포트
+              </button>
+              {scanSummary && (
+                <div className="text-sm text-gray-600">
+                  실행 시간: {(scanSummary.executionTime / 1000).toFixed(1)}초
+                </div>
+              )}
+            </div>
           </div>
 
           {/* 유의미한 결과들 */}
@@ -681,6 +692,15 @@ export default function ScanMode({
           </div>
         </div>
       )}
+
+      {/* PDF 리포트 모달 */}
+      <PDFReport
+        isOpen={showPDFReport}
+        onClose={() => setShowPDFReport(false)}
+        scanResults={scanResults}
+        scanSummary={scanSummary}
+        data={data}
+      />
     </div>
   )
 } 

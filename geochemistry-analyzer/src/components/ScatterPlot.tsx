@@ -988,11 +988,11 @@ export default function ScatterPlot({ data, selectedColumns, statistics }: Scatt
         </div>
       )}
       
-      {/* 1:1 비율 고정 차트 (크기 증가) */}
+      {/* 1:1 비율 고정 차트 (반응형) */}
       <div className="flex justify-center" ref={chartRef}>
         <div 
           id="chart-container"
-          className="w-[600px] h-[600px]" 
+          className="w-full max-w-[600px] aspect-square" 
           style={chartStyle}
         >
           <ResponsiveContainer width="100%" height="100%">
