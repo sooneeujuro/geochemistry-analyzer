@@ -28,8 +28,7 @@ export default function DataViewer({ data, selectedColumns, onColumnSelect }: Da
   const currentData = data.data.slice(startIndex, endIndex)
 
   // 사용 가능한 타입 컬럼들 (문자형 컬럼들)
-  const typeColumns = data.columns.filter(col => 
-    !data.numericColumns.includes(col) && 
+  const typeColumns = data.nonNumericColumns.filter(col => 
     data.data.some(row => typeof row[col] === 'string')
   )
 
@@ -434,7 +433,7 @@ export default function DataViewer({ data, selectedColumns, onColumnSelect }: Da
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="bg-blue-50 p-4 rounded-lg">
                   <h5 className="font-medium text-blue-800">전체 컬럼</h5>
-                  <p className="text-2xl font-bold text-blue-600">{data.columns.length}</p>
+                  <p className="text-2xl font-bold text-blue-600">{data.numericColumns.length + data.nonNumericColumns.length}</p>
                 </div>
                 <div className="bg-green-50 p-4 rounded-lg">
                   <h5 className="font-medium text-green-800">수치형 컬럼</h5>
@@ -485,7 +484,7 @@ export default function DataViewer({ data, selectedColumns, onColumnSelect }: Da
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    {data.columns.map(col => (
+                    {[...data.numericColumns, ...data.nonNumericColumns].map((col: string) => (
                       <th
                         key={col}
                         className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
@@ -498,7 +497,7 @@ export default function DataViewer({ data, selectedColumns, onColumnSelect }: Da
                 <tbody className="bg-white divide-y divide-gray-200">
                   {currentData.map((row, index) => (
                     <tr key={index} className="hover:bg-gray-50">
-                      {data.columns.map(col => (
+                      {[...data.numericColumns, ...data.nonNumericColumns].map((col: string) => (
                         <td key={col} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {typeof row[col] === 'number' ? row[col].toFixed(3) : row[col]}
                         </td>

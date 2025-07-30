@@ -4,6 +4,7 @@ export interface GeochemData {
   nonNumericColumns: string[]
   fileName: string
   typeColumn?: string  // 타입 컬럼 (선택사항)
+  metadata?: Record<string, any>  // 메타데이터 (선택사항)
   pcaResult?: PCAResult  // PCA 분석 결과 (선택사항)
 }
 
