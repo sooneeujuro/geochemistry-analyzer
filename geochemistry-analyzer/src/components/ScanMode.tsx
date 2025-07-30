@@ -39,6 +39,12 @@ export default function ScanMode({
   const [isScanning, setIsScanning] = useState(false)
   const [showPDFReport, setShowPDFReport] = useState(false)
   
+  // 고급 통계분석 상태
+  const [showAdvancedStats, setShowAdvancedStats] = useState(false)
+  const [pcaSuggestions, setPcaSuggestions] = useState<any[]>([])
+  const [methodRecommendations, setMethodRecommendations] = useState<any[]>([])
+  const [isLoadingStats, setIsLoadingStats] = useState(false)
+  
   // 외부에서 받은 스캔 결과를 사용하거나, 없으면 빈 배열 사용
   const scanResults = externalScanResults
   const scanSummary = externalScanSummary
@@ -161,6 +167,48 @@ export default function ScanMode({
       setAiError(error instanceof Error ? error.message : 'AI 추천을 받는데 실패했습니다.')
     } finally {
       setIsLoadingAI(false)
+    }
+  }
+
+  // 고급 통계분석 함수들
+  const getAdvancedStatistics = async (analysisType: 'pca-suggestion' | 'method-recommendation') => {
+    if (isLoadingStats) return
+    
+    setIsLoadingStats(true)
+    try {
+      // 데이터 준비
+      const preparedData: Record<string, number[]> = {}
+      data.numericColumns.forEach(col => {
+        preparedData[col] = data.data.map(row => parseFloat(row[col])).filter(v => !isNaN(v))
+      })
+
+      const response = await fetch('/api/statistical-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          data: preparedData,
+          analysisType,
+          context: scanOptions.sampleDescription || 'geochemical data analysis'
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      const result = await response.json()
+      
+      if (analysisType === 'pca-suggestion') {
+        setPcaSuggestions(result.suggestions || [])
+      } else if (analysisType === 'method-recommendation') {
+        setMethodRecommendations(result.recommendations || [])
+      }
+
+    } catch (error) {
+      console.error('Advanced statistics error:', error)
+      alert('고급 통계분석 요청 중 오류가 발생했습니다.')
+    } finally {
+      setIsLoadingStats(false)
     }
   }
 
@@ -664,6 +712,125 @@ export default function ScanMode({
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 고급 통계분석 */}
+      {!isScanning && data.numericColumns.length >= 3 && (
+        <div className="rounded-lg shadow-xl p-6" style={{backgroundColor: 'white', border: '3px solid #74CEF7'}}>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold flex items-center" style={{color: '#0357AF'}}>
+              📊 고급 통계분석
+            </h3>
+            <button
+              onClick={() => setShowAdvancedStats(!showAdvancedStats)}
+              className="text-sm px-3 py-1 rounded-md transition-all"
+              style={{
+                backgroundColor: showAdvancedStats ? '#0180CC' : '#74CEF7',
+                color: 'white'
+              }}
+            >
+              {showAdvancedStats ? '접기' : '펼치기'}
+            </button>
+          </div>
+
+          {showAdvancedStats && (
+            <div className="space-y-4">
+              {/* PCA 추천 */}
+              <div className="p-4 rounded-lg" style={{backgroundColor: '#E6FBFA', border: '2px solid #9BE8F0'}}>
+                <div className="flex justify-between items-center mb-3">
+                  <h4 className="font-medium flex items-center" style={{color: '#0357AF'}}>
+                    🔍 PCA 변수 조합 추천
+                  </h4>
+                  <button
+                    onClick={() => getAdvancedStatistics('pca-suggestion')}
+                    disabled={isLoadingStats}
+                    className="text-sm px-3 py-1 rounded-md text-white transition-all"
+                    style={{
+                      backgroundColor: isLoadingStats ? '#9CA3AF' : '#0357AF'
+                    }}
+                  >
+                    {isLoadingStats ? '분석중...' : 'AI 추천'}
+                  </button>
+                </div>
+                
+                {pcaSuggestions.length > 0 && (
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {pcaSuggestions.map((suggestion, idx) => (
+                      <div key={idx} className="p-3 rounded-md bg-white border">
+                        <div className="flex justify-between items-start mb-1">
+                          <span className="text-sm font-medium" style={{color: '#0357AF'}}>
+                            {suggestion.variables.join(', ')}
+                          </span>
+                          <span className="text-xs px-2 py-0.5 rounded-full text-white"
+                                style={{backgroundColor: '#0180CC'}}>
+                            신뢰도: {(suggestion.confidence * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                        <p className="text-xs" style={{color: '#0180CC'}}>
+                          {suggestion.reason}
+                        </p>
+                        {suggestion.varianceExplained && (
+                          <div className="text-xs mt-1" style={{color: '#666'}}>
+                            설명력: PC1({suggestion.varianceExplained[0]?.toFixed(1)}%), 
+                            PC2({suggestion.varianceExplained[1]?.toFixed(1)}%)
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 통계방법 추천 */}
+              <div className="p-4 rounded-lg" style={{backgroundColor: '#9BE8F0', border: '2px solid #74CEF7'}}>
+                <div className="flex justify-between items-center mb-3">
+                  <h4 className="font-medium flex items-center" style={{color: '#0357AF'}}>
+                    🧮 통계분석 방법 추천
+                  </h4>
+                  <button
+                    onClick={() => getAdvancedStatistics('method-recommendation')}
+                    disabled={isLoadingStats}
+                    className="text-sm px-3 py-1 rounded-md text-white transition-all"
+                    style={{
+                      backgroundColor: isLoadingStats ? '#9CA3AF' : '#0357AF'
+                    }}
+                  >
+                    {isLoadingStats ? '분석중...' : 'AI 추천'}
+                  </button>
+                </div>
+                
+                {methodRecommendations.length > 0 && (
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {methodRecommendations.map((method, idx) => (
+                      <div key={idx} className="p-3 rounded-md bg-white border">
+                        <div className="flex justify-between items-start mb-1">
+                          <span className="text-sm font-medium" style={{color: '#0357AF'}}>
+                            {method.method}
+                          </span>
+                          <span className="text-xs px-2 py-0.5 rounded-full text-white"
+                                style={{backgroundColor: '#0180CC'}}>
+                            신뢰도: {(method.confidence * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                        <p className="text-xs" style={{color: '#0180CC'}}>
+                          {method.reason}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 분석 현황 */}
+              <div className="text-xs p-3 rounded-md" style={{backgroundColor: '#74CEF7', color: 'white'}}>
+                📈 변수 {data.numericColumns.length}개 | 샘플 {data.data.length}개
+                {scanOptions.sampleDescription && (
+                  <span className="ml-2">| {scanOptions.sampleDescription}</span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
