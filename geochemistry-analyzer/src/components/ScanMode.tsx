@@ -3,7 +3,16 @@
 import { useState, useEffect, useMemo } from 'react'
 import { GeochemData, ScanResult, ScanOptions, ScanSummary } from '@/types/geochem'
 import { calculateStatistics } from '@/lib/statistics'
-import { estimateAPICost, AIRecommendation } from '@/lib/ai-recommendations'
+import { estimateAPICost } from '@/lib/ai-recommendations'
+
+interface AIRecommendation {
+  xColumn: string
+  yColumn: string
+  reason: string
+  confidence: number
+  isRatio?: boolean
+  ratioName?: string
+}
 import ScanResultCard from './ScanResultCard'
 import PDFReport from './PDFReport'
 import { Play, Settings, Download, Filter, TrendingUp, AlertCircle, ChevronLeft, ChevronRight, RotateCcw, Brain, Key, DollarSign, FileText } from 'lucide-react'
@@ -178,17 +187,27 @@ export default function ScanMode({
     const results: ScanResult[] = []
 
     try {
-      // 조합 생성: AI 추천만 사용 또는 모든 조합
-      let combinations: Array<{xColumn: string, yColumn: string, aiRecommended?: boolean, aiReason?: string, aiConfidence?: number}> = []
+      // 조합 생성: AI 추천만 사용 또는 모든 조합 (비율 포함)
+      let combinations: Array<{
+        xColumn: string, 
+        yColumn: string, 
+        aiRecommended?: boolean, 
+        aiReason?: string, 
+        aiConfidence?: number,
+        isRatio?: boolean,
+        ratioName?: string
+      }> = []
       
       if (scanOptions.aiRecommendationsOnly && aiRecommendations.length > 0) {
-        // AI 추천 조합만 사용
+        // AI 추천 조합만 사용 (비율 포함)
         combinations = aiRecommendations.map(rec => ({
           xColumn: rec.xColumn,
           yColumn: rec.yColumn,
           aiRecommended: true,
           aiReason: rec.reason,
-          aiConfidence: rec.confidence
+          aiConfidence: rec.confidence,
+          isRatio: rec.isRatio,
+          ratioName: rec.ratioName
         }))
       } else {
         // 모든 조합 생성
@@ -208,7 +227,9 @@ export default function ScanMode({
               yColumn,
               aiRecommended: !!aiRec,
               aiReason: aiRec?.reason,
-              aiConfidence: aiRec?.confidence
+              aiConfidence: aiRec?.confidence,
+              isRatio: aiRec?.isRatio,
+              ratioName: aiRec?.ratioName
             })
           }
         }
@@ -216,18 +237,36 @@ export default function ScanMode({
 
       // 각 조합 분석
       for (const combination of combinations) {
-        const { xColumn, yColumn, aiRecommended, aiReason, aiConfidence } = combination
+        const { xColumn, yColumn, aiRecommended, aiReason, aiConfidence, isRatio, ratioName } = combination
 
-        // 데이터 추출
+        // 데이터 추출 (비율 계산 포함)
         const validData = data.data
-          .map(row => ({
-            x: parseFloat(row[xColumn]),
-            y: parseFloat(row[yColumn]),
-            type: scanOptions.includeTypeColumn && scanOptions.selectedTypeColumn 
-              ? row[scanOptions.selectedTypeColumn] 
-              : 'default'
-          }))
-          .filter(point => !isNaN(point.x) && !isNaN(point.y) && isFinite(point.x) && isFinite(point.y))
+          .map(row => {
+            let x = parseFloat(row[xColumn])
+            let y = parseFloat(row[yColumn])
+            
+            // 비율인 경우 계산
+            if (isRatio && ratioName) {
+              // x/y 비율 계산
+              if (y !== 0) {
+                const ratioValue = x / y
+                x = ratioValue
+                y = 1 // 비율이므로 y축은 고정값
+              } else {
+                return null // 0으로 나누기 방지
+              }
+            }
+            
+            return {
+              x,
+              y,
+              type: scanOptions.includeTypeColumn && scanOptions.selectedTypeColumn 
+                ? String(row[scanOptions.selectedTypeColumn]) 
+                : 'default'
+            }
+          })
+          .filter((point): point is { x: number; y: number; type: string } => 
+            point !== null && !isNaN(point.x) && !isNaN(point.y) && isFinite(point.x) && isFinite(point.y))
 
         if (validData.length < 3) continue
 
@@ -254,11 +293,11 @@ export default function ScanMode({
         }
 
         results.push({
-          id: `${xColumn}_${yColumn}`,
+          id: `${xColumn}_${yColumn}${isRatio ? '_ratio' : ''}`,
           xColumn,
           yColumn,
-          xLabel: xColumn,
-          yLabel: yColumn,
+          xLabel: isRatio && ratioName ? ratioName : xColumn,
+          yLabel: isRatio ? 'Values' : yColumn,
           statistics,
           isSignificant,
           chartData: validData,

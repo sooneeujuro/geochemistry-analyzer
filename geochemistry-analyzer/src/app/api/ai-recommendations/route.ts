@@ -12,6 +12,8 @@ interface AIRecommendation {
   yColumn: string
   reason: string
   confidence: number
+  isRatio?: boolean
+  ratioName?: string
 }
 
 export async function POST(request: NextRequest) {
@@ -102,24 +104,38 @@ async function getOpenAIRecommendations({
   maxRecommendations: number
   apiKey: string
 }): Promise<AIRecommendation[]> {
-  const prompt = `As a geochemistry expert, analyze these variables and recommend ${Math.min(maxRecommendations, 8)} scientifically meaningful pairs for correlation analysis:
+  const prompt = `As a geochemistry expert, recommend ${Math.min(maxRecommendations, 10)} scientifically meaningful correlations from these variables:
 
 Variables: ${columns.join(', ')}
 ${sampleDescription ? `Context: ${sampleDescription}` : ''}
 
-Focus on:
-- Major/trace element correlations (SiO2-K2O, Rb-Sr, etc.)
-- Mineral chemistry relationships (Al2O3-CaO, MgO-FeO)
-- Petrogenetic processes (differentiation, alteration)
-- REE patterns if present
+Include BOTH:
+1. Element vs Element correlations (SiO2-K2O, Rb-Sr, etc.)
+2. Element RATIOS (La/Sm, Rb/Sr, Zr/Hf, etc.) for geochemical indices
 
-Return JSON only:
+Focus on:
+- Major/trace element correlations
+- Geochemical ratios (REE, HFSE, LILE patterns)
+- Mineral chemistry relationships
+- Petrogenetic indicators
+
+For ratios, use isRatio:true and provide ratioName.
+
+JSON format:
 {
   "recommendations": [
     {
-      "xColumn": "element1", 
-      "yColumn": "element2",
-      "reason": "specific geochemical significance",
+      "xColumn": "La", 
+      "yColumn": "Sm",
+      "reason": "REE fractionation indicator",
+      "confidence": 0.9,
+      "isRatio": true,
+      "ratioName": "La/Sm"
+    },
+    {
+      "xColumn": "SiO2", 
+      "yColumn": "K2O",
+      "reason": "igneous differentiation",
       "confidence": 0.85
     }
   ]
@@ -152,16 +168,26 @@ Return JSON only:
   } catch {
     console.error('Failed to parse OpenAI response:', content)
     
-    // 실제 컬럼 기반 스마트 폴백
+    // 실제 컬럼 기반 스마트 폴백 (상관관계 + 비율)
     const fallbackPairs = []
+    
+    // 일반 상관관계
     const commonPairs = [
       ['SiO2', 'Al2O3'], ['SiO2', 'K2O'], ['Al2O3', 'CaO'], 
       ['MgO', 'FeO'], ['Rb', 'Sr'], ['Zr', 'Hf'], ['Y', 'Ho'],
       ['TiO2', 'V'], ['Cr', 'Ni'], ['Ba', 'Rb']
     ]
     
+    // 지구화학 비율
+    const commonRatios = [
+      ['La', 'Sm', 'La/Sm'], ['Rb', 'Sr', 'Rb/Sr'], ['Zr', 'Hf', 'Zr/Hf'],
+      ['K2O', 'Na2O', 'K2O/Na2O'], ['Y', 'Ho', 'Y/Ho'], ['Nb', 'Ta', 'Nb/Ta'],
+      ['Ba', 'Rb', 'Ba/Rb'], ['Sr', 'Y', 'Sr/Y']
+    ]
+    
+    // 상관관계 추가
     for (const [x, y] of commonPairs) {
-      if (columns.includes(x) && columns.includes(y) && fallbackPairs.length < 3) {
+      if (columns.includes(x) && columns.includes(y) && fallbackPairs.length < 2) {
         fallbackPairs.push({
           xColumn: x,
           yColumn: y,
@@ -171,7 +197,21 @@ Return JSON only:
       }
     }
     
-    return fallbackPairs.length > 0 ? fallbackPairs : []
+    // 비율 추가
+    for (const [x, y, ratioName] of commonRatios) {
+      if (columns.includes(x) && columns.includes(y) && fallbackPairs.length < 5) {
+        fallbackPairs.push({
+          xColumn: x,
+          yColumn: y,
+          reason: `${ratioName} geochemical ratio`,
+          confidence: 0.8,
+          isRatio: true,
+          ratioName: ratioName
+        })
+      }
+    }
+    
+    return fallbackPairs
   }
 }
 
@@ -187,14 +227,17 @@ async function getGoogleAIRecommendations({
   maxRecommendations: number
   apiKey: string
 }): Promise<AIRecommendation[]> {
-  const prompt = `Geochemistry expert: Recommend ${Math.min(maxRecommendations, 8)} scientifically meaningful variable pairs from: ${columns.join(', ')}
+  const prompt = `Geochemistry expert: Recommend ${Math.min(maxRecommendations, 10)} correlations from: ${columns.join(', ')}
 
 ${sampleDescription ? `Sample: ${sampleDescription}` : ''}
 
-Consider major elements (SiO2, Al2O3, etc.), trace elements, REE patterns, and mineral chemistry. 
+Include both element correlations AND ratios (La/Sm, Rb/Sr, etc.). For ratios, set isRatio:true.
 
-JSON format:
-{"recommendations": [{"xColumn": "actual_variable", "yColumn": "actual_variable", "reason": "geochemical significance", "confidence": 0.8}]}`
+JSON:
+{"recommendations": [
+  {"xColumn": "La", "yColumn": "Sm", "reason": "REE ratio", "confidence": 0.9, "isRatio": true, "ratioName": "La/Sm"},
+  {"xColumn": "SiO2", "yColumn": "K2O", "reason": "differentiation", "confidence": 0.8}
+]}`
 
   const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
     method: 'POST',
@@ -232,16 +275,26 @@ JSON format:
   } catch (error) {
     console.error('Failed to parse Google AI JSON response')
     
-    // 실제 컬럼 기반 스마트 폴백
+    // 실제 컬럼 기반 스마트 폴백 (상관관계 + 비율)
     const fallbackPairs = []
+    
+    // 일반 상관관계
     const commonPairs = [
       ['SiO2', 'Al2O3'], ['SiO2', 'K2O'], ['Al2O3', 'CaO'], 
       ['MgO', 'FeO'], ['Rb', 'Sr'], ['Zr', 'Hf'], ['Y', 'Ho'],
       ['TiO2', 'V'], ['Cr', 'Ni'], ['Ba', 'Rb']
     ]
     
+    // 지구화학 비율
+    const commonRatios = [
+      ['La', 'Sm', 'La/Sm'], ['Rb', 'Sr', 'Rb/Sr'], ['Zr', 'Hf', 'Zr/Hf'],
+      ['K2O', 'Na2O', 'K2O/Na2O'], ['Y', 'Ho', 'Y/Ho'], ['Nb', 'Ta', 'Nb/Ta'],
+      ['Ba', 'Rb', 'Ba/Rb'], ['Sr', 'Y', 'Sr/Y']
+    ]
+    
+    // 상관관계 추가
     for (const [x, y] of commonPairs) {
-      if (columns.includes(x) && columns.includes(y) && fallbackPairs.length < 3) {
+      if (columns.includes(x) && columns.includes(y) && fallbackPairs.length < 2) {
         fallbackPairs.push({
           xColumn: x,
           yColumn: y,
@@ -251,7 +304,21 @@ JSON format:
       }
     }
     
-    return fallbackPairs.length > 0 ? fallbackPairs : []
+    // 비율 추가
+    for (const [x, y, ratioName] of commonRatios) {
+      if (columns.includes(x) && columns.includes(y) && fallbackPairs.length < 5) {
+        fallbackPairs.push({
+          xColumn: x,
+          yColumn: y,
+          reason: `${ratioName} geochemical ratio`,
+          confidence: 0.8,
+          isRatio: true,
+          ratioName: ratioName
+        })
+      }
+    }
+    
+    return fallbackPairs
   }
 }
 
