@@ -169,63 +169,35 @@ async function getOpenAIInterpretation({
   apiKey: string
 }): Promise<PCAInterpretation> {
   
-  const prompt = `As a geochemistry and statistical analysis expert, provide a comprehensive interpretation of the following PCA and clustering analysis results.
+  const prompt = `Geochemistry PCA Analysis Expert: Provide concise interpretation.
 
-**PCA Analysis Results:**
-- Variables analyzed: ${pcaResult.variableNames.join(', ')}
-- Number of components: ${pcaResult.nComponents}
-- Eigenvalues: ${pcaResult.eigenvalues.map((v: number) => v.toFixed(3)).join(', ')}
-- Explained variance ratio: ${pcaResult.explainedVariance.map((v: number) => v.toFixed(2) + '%').join(', ')}
-- Cumulative explained variance: ${pcaResult.cumulativeVariance.map((v: number) => v.toFixed(2) + '%').join(', ')}
-- Total samples: ${pcaResult.scores.length}
+**Data Summary:**
+Variables: ${pcaResult.variableNames.join(', ')}
+Components: ${pcaResult.nComponents}
+Eigenvalues: ${pcaResult.eigenvalues.map((v: number) => v.toFixed(2)).join(', ')}
+Explained Variance: ${pcaResult.explainedVariance.map((v: number) => v.toFixed(1) + '%').join(', ')}
+Clusters: ${clusteringResult.optimalK} (silhouette: ${clusteringResult.silhouetteScore.toFixed(2)})
+${statisticalTests?.bartlett ? `Bartlett p=${statisticalTests.bartlett.pValue < 0.001 ? '<0.001' : statisticalTests.bartlett.pValue.toFixed(3)}` : ''}
+${statisticalTests?.kmo ? `KMO=${statisticalTests.kmo.value.toFixed(2)}` : ''}
 
-**Clustering Analysis Results:**
-- Optimal number of clusters: ${clusteringResult.optimalK}
-- Silhouette score: ${clusteringResult.silhouetteScore.toFixed(3)}
-${clusteringResult.alternativeK ? `- Alternative cluster count: ${clusteringResult.alternativeK} (silhouette: ${clusteringResult.alternativeSilhouette?.toFixed(3)})` : ''}
+**Brief Interpretation Needed:**
+1. PCA suitability (eigenvalues >1, explained variance adequacy)
+2. Optimal components selection reasoning  
+3. Clustering validity (silhouette score meaning)
+4. Key geological/geochemical insights
+5. Data quality assessment
 
-**Statistical Test Results:**
-${statisticalTests?.bartlett ? `- Bartlett's Test of Sphericity: Chi-Square = ${statisticalTests.bartlett.chiSquare.toFixed(2)}, p-value = ${statisticalTests.bartlett.pValue < 0.001 ? '<0.001' : statisticalTests.bartlett.pValue.toFixed(3)}` : ''}
-${statisticalTests?.kmo ? `- KMO Test: ${statisticalTests.kmo.value.toFixed(3)}` : ''}
+${language === 'both' ? 'Provide in KOREAN and ENGLISH.' : language === 'korean' ? 'Provide in KOREAN only.' : 'Provide in ENGLISH only.'}
 
-${sampleNames ? `**Sample Information:** ${sampleNames.length} samples analyzed` : ''}
-
-Please provide a detailed interpretation covering:
-
-1. **PCA Analysis Interpretation:**
-   - Significance of eigenvalues (Kaiser criterion: >1)
-   - Explained variance interpretation (adequacy of dimensionality reduction)
-   - Scree plot interpretation and optimal component selection
-   - Overall PCA suitability assessment
-
-2. **Clustering Analysis Interpretation:**
-   - Optimal cluster number justification
-   - Silhouette score evaluation and data separability
-   - Cluster visualization implications
-   - Geological/geochemical meaning of cluster patterns
-
-3. **Statistical Validation:**
-   - Bartlett's test interpretation (data suitability for PCA)
-   - KMO test interpretation (sampling adequacy)
-   - Overall statistical significance assessment
-
-4. **Conclusions and Recommendations:**
-   - Summary of key findings
-   - Data quality assessment
-   - Suggestions for further analysis or interpretation
-
-${language === 'both' || language === 'korean' ? 'Provide the interpretation in KOREAN first,' : ''}
-${language === 'both' || language === 'english' ? `${language === 'both' ? ' then in ENGLISH.' : 'Provide the interpretation in ENGLISH.'}` : ''}
-
-Format your response as valid JSON only:
+**Respond in JSON format only:**
 {
-  ${language === 'both' || language === 'korean' ? '"korean": "한국어 해설...",\n  ' : ''}
-  ${language === 'both' || language === 'english' ? '"english": "English interpretation..."' : ''}
+  ${language === 'both' || language === 'korean' ? '"korean": "간결한 한국어 해설...",\n  ' : ''}
+  ${language === 'both' || language === 'english' ? '"english": "Concise English interpretation..."' : ''}
 }`
 
-  // 타임아웃 설정 (60초)
+  // 타임아웃 설정 (45초로 단축)
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 60000)
+  const timeoutId = setTimeout(() => controller.abort(), 45000)
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -237,8 +209,8 @@ Format your response as valid JSON only:
       body: JSON.stringify({
         model: 'gpt-4',
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 4000,
-        temperature: 0.3,
+        max_tokens: 1500,  // 4000에서 1500으로 감소
+        temperature: 0.2,  // 0.3에서 0.2로 감소 (더 일관된 응답)
       }),
       signal: controller.signal
     })
@@ -291,7 +263,7 @@ Format your response as valid JSON only:
     clearTimeout(timeoutId)
     
     if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error('OpenAI API request timed out after 60 seconds')
+      throw new Error('OpenAI API request timed out after 45 seconds')
     }
     
     throw error
@@ -388,45 +360,43 @@ function generateFallbackInterpretation(
 ): string {
   const eigenvaluesAboveOne = pcaResult.eigenvalues.filter((v: number) => v > 1).length
   const totalVariance = pcaResult.cumulativeVariance[pcaResult.cumulativeVariance.length - 1]
+  const pc1Var = pcaResult.explainedVariance[0]
+  const pc2Var = pcaResult.explainedVariance[1] || 0
   
   if (language === 'korean') {
-    return `### PCA 및 클러스터링 분석 결과
+    return `### 📊 PCA 분석 요약
 
-**PCA 분석 결과:**
-- 분석된 변수: ${pcaResult.variableNames.join(', ')}
-- 고유값이 1보다 큰 주성분: ${eigenvaluesAboveOne}개
-- 총 설명 분산: ${totalVariance.toFixed(1)}%
-- ${totalVariance >= 70 ? '충분한 설명력을 가진' : '추가 분석이 필요한'} 차원 축소 결과
+**🔍 주성분 분석:**
+• 변수: ${pcaResult.variableNames.join(', ')}
+• 유효 주성분: ${eigenvaluesAboveOne}개 (고유값 >1)
+• PC1 설명력: ${pc1Var.toFixed(1)}%, PC2: ${pc2Var.toFixed(1)}%
+• 총 설명분산: ${totalVariance.toFixed(1)}% ${totalVariance >= 70 ? '✅ 충분' : '⚠️ 보통'}
 
-**클러스터링 분석 결과:**
-- 최적 클러스터 수: ${clusteringResult.optimalK}개
-- 실루엣 점수: ${clusteringResult.silhouetteScore.toFixed(3)}
-- ${clusteringResult.silhouetteScore > 0.3 ? '양호한' : '개선이 필요한'} 클러스터 분리도
+**🎯 클러스터링:**
+• 최적 클러스터: ${clusteringResult.optimalK}개
+• 실루엣 점수: ${clusteringResult.silhouetteScore.toFixed(2)} ${clusteringResult.silhouetteScore > 0.3 ? '✅ 양호' : '⚠️ 개선필요'}
 
-**통계적 검정:**
-${statisticalTests?.bartlett ? `- Bartlett 검정: ${statisticalTests.bartlett.pValue < 0.05 ? 'PCA에 적합한 데이터' : 'PCA 적합성 검토 필요'}` : ''}
-${statisticalTests?.kmo ? `- KMO 검정: ${statisticalTests.kmo.value.toFixed(3)} (${statisticalTests.kmo.value > 0.6 ? '적합' : '부적합'})` : ''}
+**📈 해석:**
+${eigenvaluesAboveOne >= 2 ? '주성분 분석이 적절히 수행되었으며' : '주성분 수를 재검토할 필요가 있고'}, ${clusteringResult.silhouetteScore > 0.3 ? '클러스터 구분이 명확합니다' : '클러스터 분리도 개선이 필요합니다'}.
 
-이 분석은 지구화학 데이터의 주요 변동성과 그룹 특성을 파악하는 데 유용한 결과를 제공합니다.`
+*AI 서비스 일시 중단으로 기본 해석을 제공합니다.*`
   } else {
-    return `### PCA and Clustering Analysis Results
+    return `### 📊 PCA Analysis Summary
 
-**PCA Analysis:**
-- Variables analyzed: ${pcaResult.variableNames.join(', ')}
-- Components with eigenvalues >1: ${eigenvaluesAboveOne}
-- Total explained variance: ${totalVariance.toFixed(1)}%
-- Dimensionality reduction shows ${totalVariance >= 70 ? 'adequate' : 'limited'} explanatory power
+**🔍 Principal Components:**
+• Variables: ${pcaResult.variableNames.join(', ')}
+• Valid components: ${eigenvaluesAboveOne} (eigenvalues >1)
+• PC1 variance: ${pc1Var.toFixed(1)}%, PC2: ${pc2Var.toFixed(1)}%
+• Total explained: ${totalVariance.toFixed(1)}% ${totalVariance >= 70 ? '✅ Adequate' : '⚠️ Moderate'}
 
-**Clustering Analysis:**
-- Optimal clusters: ${clusteringResult.optimalK}
-- Silhouette score: ${clusteringResult.silhouetteScore.toFixed(3)}
-- Cluster separation is ${clusteringResult.silhouetteScore > 0.3 ? 'good' : 'moderate'}
+**🎯 Clustering:**
+• Optimal clusters: ${clusteringResult.optimalK}
+• Silhouette score: ${clusteringResult.silhouetteScore.toFixed(2)} ${clusteringResult.silhouetteScore > 0.3 ? '✅ Good' : '⚠️ Needs improvement'}
 
-**Statistical Tests:**
-${statisticalTests?.bartlett ? `- Bartlett's test: Data is ${statisticalTests.bartlett.pValue < 0.05 ? 'suitable' : 'questionable'} for PCA` : ''}
-${statisticalTests?.kmo ? `- KMO test: ${statisticalTests.kmo.value.toFixed(3)} (${statisticalTests.kmo.value > 0.6 ? 'adequate' : 'inadequate'})` : ''}
+**📈 Interpretation:**
+The PCA ${eigenvaluesAboveOne >= 2 ? 'performed adequately' : 'may need component review'} and clustering ${clusteringResult.silhouetteScore > 0.3 ? 'shows clear separation' : 'requires separation improvement'}.
 
-This analysis provides valuable insights into the main variability patterns and group characteristics of the geochemical data.`
+*Basic interpretation provided due to temporary AI service unavailability.*`
   }
 }
 

@@ -256,9 +256,9 @@ export async function generatePCAInterpretation(
   request: PCAInterpretationRequest
 ): Promise<PCAInterpretationResponse> {
   try {
-    // 타임아웃 설정 (90초 - 서버 타임아웃보다 여유있게)
+    // 타임아웃 설정 (60초로 단축 - 라이트 버전)
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 90000)
+    const timeoutId = setTimeout(() => controller.abort(), 60000)
 
     const response = await fetch('/api/pca-interpretation', {
       method: 'POST',
@@ -317,7 +317,7 @@ export async function generatePCAInterpretation(
     // 에러 타입별 처리
     if (error instanceof Error) {
       if (error.name === 'AbortError') {
-        throw new Error('timeout - 요청이 시간 초과되었습니다 (90초)')
+        throw new Error('timeout - 요청이 시간 초과되었습니다 (60초)')
       } else if (error.message.includes('504') || error.message.includes('Gateway Timeout')) {
         throw new Error('504 - AI 서비스 응답 시간 초과')
       } else if (error.message.includes('502') || error.message.includes('Bad Gateway')) {
