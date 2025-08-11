@@ -45,6 +45,7 @@ npm install
 NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+OPENAI_API_KEY=your-openai-api-key
 ```
 
 ### 4. 개발 서버 실행
@@ -159,6 +160,7 @@ vercel
 Vercel 대시보드에서 환경 변수 추가:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `OPENAI_API_KEY`
 
 ## 🔧 개발 참고사항
 

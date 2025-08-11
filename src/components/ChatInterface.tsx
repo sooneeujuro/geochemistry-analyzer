@@ -26,6 +26,8 @@ export default function ChatInterface() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [passwordInput, setPasswordInput] = useState('')
   const [userSessionId, setUserSessionId] = useState('')
+  const [sessionIdInput, setSessionIdInput] = useState('')
+  const [showSessionIdInput, setShowSessionIdInput] = useState(false)
   const [config, setConfig] = useState<ChatConfig>({
     model: 'gpt-4o',
     temperature: 0.3, // 논문 검토에 최적화된 낮은 창의성
@@ -100,17 +102,33 @@ export default function ChatInterface() {
 
   const handlePasswordSubmit = () => {
     if (passwordInput === 'schol212') {
-      const sessionId = userSessionId || prompt('개인 채팅방 비밀번호를 설정하세요:') || 'default'
-      setUserSessionId(sessionId)
-      setIsAuthenticated(true)
-      localStorage.setItem('gpt-shelter-auth', 'true')
-      localStorage.setItem('gpt-shelter-session-id', sessionId)
-      loadChatHistory(sessionId)
-      setPasswordInput('')
+      if (userSessionId) {
+        // 이미 저장된 세션 ID가 있으면 바로 로그인
+        setIsAuthenticated(true)
+        localStorage.setItem('gpt-shelter-auth', 'true')
+        localStorage.setItem('gpt-shelter-session-id', userSessionId)
+        loadChatHistory(userSessionId)
+        setPasswordInput('')
+      } else {
+        // 새 사용자면 세션 ID 입력 화면 표시
+        setShowSessionIdInput(true)
+        setPasswordInput('')
+      }
     } else {
       alert('비밀번호가 틀렸습니다!')
       setPasswordInput('')
     }
+  }
+
+  const handleSessionIdSubmit = () => {
+    const sessionId = sessionIdInput.trim() || `user-${Date.now()}`
+    setUserSessionId(sessionId)
+    setIsAuthenticated(true)
+    setShowSessionIdInput(false)
+    localStorage.setItem('gpt-shelter-auth', 'true')
+    localStorage.setItem('gpt-shelter-session-id', sessionId)
+    loadChatHistory(sessionId)
+    setSessionIdInput('')
   }
 
   const loadChatHistory = async (sessionId: string) => {
@@ -342,30 +360,69 @@ export default function ChatInterface() {
               <MessageCircle className="h-16 w-16 mx-auto mb-4 text-green-600" />
               <h2 className="text-2xl font-bold text-gray-800 mb-2">GPT 4o 대피소 🏠</h2>
               <p className="text-gray-600 text-sm">
-                이곳은 특별한 공간입니다. 접근 비밀번호를 입력해주세요.
+                {showSessionIdInput 
+                  ? "개인 채팅방 ID를 설정해주세요. 같은 ID로 다른 기기에서도 접속 가능합니다."
+                  : "이곳은 특별한 공간입니다. 접근 비밀번호를 입력해주세요."
+                }
               </p>
             </div>
             
             <div className="space-y-4">
-              <input
-                type="password"
-                value={passwordInput}
-                onChange={(e) => setPasswordInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handlePasswordSubmit()}
-                placeholder="비밀번호를 입력하세요..."
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-center"
-              />
-              
-              <button
-                onClick={handlePasswordSubmit}
-                className="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
-              >
-                입장하기
-              </button>
-              
-              <p className="text-xs text-gray-500 mt-4">
-                💡 입장 후 개인 채팅방 비밀번호를 설정할 수 있습니다
-              </p>
+              {showSessionIdInput ? (
+                // 세션 ID 입력 화면
+                <>
+                  <input
+                    type="text"
+                    value={sessionIdInput}
+                    onChange={(e) => setSessionIdInput(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleSessionIdSubmit()}
+                    placeholder="예: myroom123, lab-session, 등..."
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-center"
+                  />
+                  
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => setShowSessionIdInput(false)}
+                      className="flex-1 px-4 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors font-medium"
+                    >
+                      뒤로가기
+                    </button>
+                    <button
+                      onClick={handleSessionIdSubmit}
+                      className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                    >
+                      채팅방 만들기
+                    </button>
+                  </div>
+                  
+                  <p className="text-xs text-gray-500 mt-4">
+                    💡 비워두면 자동으로 고유 ID가 생성됩니다. 기존 채팅방에 입장하려면 정확한 ID를 입력하세요.
+                  </p>
+                </>
+              ) : (
+                // 초기 비밀번호 입력 화면
+                <>
+                  <input
+                    type="password"
+                    value={passwordInput}
+                    onChange={(e) => setPasswordInput(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handlePasswordSubmit()}
+                    placeholder="비밀번호를 입력하세요..."
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-center"
+                  />
+                  
+                  <button
+                    onClick={handlePasswordSubmit}
+                    className="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+                  >
+                    입장하기
+                  </button>
+                  
+                  <p className="text-xs text-gray-500 mt-4">
+                    💡 입장 후 개인 채팅방 ID를 설정할 수 있습니다
+                  </p>
+                </>
+              )}
             </div>
           </div>
         </div>
