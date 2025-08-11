@@ -211,9 +211,9 @@ export default function Home() {
               </>
             )}
             <button
-              onClick={() => setMode('chat')}
+              onClick={() => setMode('chat' as 'analysis' | 'scan' | 'chat')}
               className={`flex items-center px-6 py-3 rounded-lg font-medium transition-all ${
-                mode === 'chat' 
+                (mode as string) === 'chat' 
                   ? 'bg-green-600 text-white shadow-lg' 
                   : 'bg-white text-gray-700 shadow-md hover:shadow-lg'
               }`}
