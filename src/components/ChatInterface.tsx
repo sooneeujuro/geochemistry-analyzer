@@ -129,9 +129,26 @@ export default function ChatInterface() {
   }
 
   const loadChatHistory = async (sessionId: string) => {
-    // 임시로 로컬 저장만 사용 (Supabase 문제 해결까지)
-    console.log('🔧 임시 모드: 로컬 저장만 사용')
-    
+    try {
+      // 1. Supabase에서 최신 데이터 가져오기
+      const response = await fetch(`/api/chat-sessions?session_id=${sessionId}`)
+      const result = await response.json()
+      
+      if (response.ok && result.success && result.data) {
+        const cloudMessages = result.data.messages
+        setMessages(cloudMessages)
+        // 클라우드 데이터를 로컬에도 백업
+        localStorage.setItem(`gpt-shelter-history-${sessionId}`, JSON.stringify(cloudMessages))
+        console.log('✅ 클라우드에서 채팅 히스토리 로드됨')
+        return
+      } else if (response.status === 503) {
+        console.log('⚠️ Supabase 미설정: 로컬 저장만 사용')
+      }
+    } catch (error) {
+      console.error('클라우드 채팅 히스토리 로드 실패:', error)
+    }
+
+    // 2. 클라우드 실패 시 로컬 스토리지에서 로드
     const savedHistory = localStorage.getItem(`gpt-shelter-history-${sessionId}`)
     if (savedHistory) {
       try {
@@ -141,9 +158,6 @@ export default function ChatInterface() {
       } catch (error) {
         console.error('로컬 채팅 히스토리 로드 실패:', error)
       }
-    } else {
-      console.log('📝 새로운 세션 시작')
-      setMessages([])
     }
   }
 
@@ -152,8 +166,30 @@ export default function ChatInterface() {
       // 1. 로컬 스토리지에 즉시 저장 (빠른 응답)
       localStorage.setItem(`gpt-shelter-history-${userSessionId}`, JSON.stringify(updatedMessages))
       
-      // 임시로 Supabase 동기화 비활성화 (500 에러 문제 해결까지)
-      console.log('💾 로컬에 저장됨 (임시 모드: Supabase 비활성화)')
+      // 2. Supabase에 비동기 저장 (기기 간 동기화)
+      try {
+        const response = await fetch('/api/chat-sessions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            session_id: userSessionId,
+            messages: updatedMessages
+          })
+        })
+        
+        const result = await response.json()
+        if (response.ok && result.success) {
+          console.log('☁️ 클라우드 동기화 완료')
+        } else if (response.status === 503) {
+          console.log('⚠️ Supabase 미설정: 로컬 저장만 사용')
+        } else {
+          console.error('클라우드 동기화 실패:', result.error)
+        }
+      } catch (error) {
+        console.error('클라우드 저장 에러:', error)
+      }
     }
   }
 
