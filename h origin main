@@ -1,0 +1,20 @@
+[33m3467288[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m  fix: TypeScript 타입 에러 수정 - handleModeChange에 chat 타입 추가
+[33m857c9e2[m 🚀 feat: GPT 4o 대피소 기능 복구 - ChatInterface 연결 완료
+[33m1c18ad7[m  Fix: mammoth 타입 에러 수정 및 최종 배포 준비
+[33m8210490[m  Fix: 프로젝트 구조 최적화 - 루트 레벨로 이동하여 Vercel 배포 문제 해결
+[33m21c1585[m feat: Light version of PCA interpretation for faster response
+[33m2d71a4c[m fix: Improve PCA interpretation API error handling and timeout
+[33ma88749d[m feat: Add AI-powered PCA interpretation feature
+[33m97477b3[m feat: Add AI interpretation button to PCA results panel
+[33m2743727[m Fix all remaining TypeScript errors - Complete build fix
+[33mc5b3de4[m Fix TypeScript error: Add missing typeColumn property
+[33m93e3674[m Fix PCA analysis issues and add cluster debugging
+[33m835b44a[m feat: Enhanced PCA analysis with detailed results table and improved recommendations - Added comprehensive PCA results table with loadings, cluster averages, and interpretations - Improved PCA recommendation algorithm to filter out weak PC2 components - Smart correlation-based variable grouping (threshold 0.6) - Estimated variance explanation validation (PC2 >= 10%) - Color-coded loading significance indicators - Professional statistical interpretation guide - Fixed interface conflicts and updated to new PCASuggestion format - Version 0.5.1
+[33m999c150[m feat: Smart column filtering for AI recommendations - Intelligent detection of similar columns (SiO2_wt%, SiO2_percent, SiO2) - Priority-based column selection with geochemical domain knowledge - Real-time filtering reasons display in UI - Comprehensive pattern matching for major, trace, and REE elements - Prevents AI from recommending redundant column combinations - Version 0.5.0
+[33m86d23fc[m fix: Enhanced PCA error handling and diagnostics - Improved PCA data validation with detailed error messages - Added robust string-to-number conversion for better data handling - Enhanced k-means clustering with k-means++ initialization - Added support for invalid data points in PCA visualization (gray color) - Fixed metadata property references in ScatterPlot component - Better cluster count optimization with improved elbow method - Version 0.4.9
+[33m4e9c32c[m feat: PCA clustering visualization with intelligent color coding - Added k-means clustering to PCA analysis for meaningful data grouping - Implemented cluster-based color coding instead of type-based coloring - Auto-detection of optimal cluster count using elbow method - ScatterPlot component now supports PCA mode with cluster-specific colors - Enhanced PCA workflow with cluster information in alert messages - Version 0.4.8
+[33m31717b3[m feat: Enhanced PCA analysis with seamless visualization workflow - PCA results now automatically switch to analysis mode with PC1 vs PC2 graph - Auto-scroll to analysis panel after PCA completion - Maintain existing graph manipulation capabilities - Version 0.4.7
+[33ma54bb30[m v0.4.6 - Real PCA Analysis: True principal component analysis with PC1 vs PC2 scores, loadings, and explained variance
+[33m99232c3[m v0.4.5 - Interactive Results Filtering: Direct page input, variable-based filtering with correlation sorting
+[33mdc1a093[m v0.4.4 - Enhanced PCA Results Visibility: Auto-scroll to results, clear click instructions, better navigation
+[33m2cdb2cc[m v0.4.3 - Fix Statistical Analysis API Timeout: Remove OpenAI calls, add geochemical domain fallbacks

@@ -86,6 +86,22 @@ create policy "Users can update their own data" on geochem_data
 
 create policy "Users can delete their own data" on geochem_data
   for delete using (auth.uid() = user_id);
+
+-- GPT 4o 대피소 채팅 세션 테이블
+create table chat_sessions (
+  id uuid default gen_random_uuid() primary key,
+  session_id text not null,
+  messages jsonb not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 세션 ID에 대한 인덱스 (빠른 검색)
+create index idx_chat_sessions_session_id on chat_sessions(session_id);
+
+-- Row Level Security 비활성화 (공개 채팅방)
+-- 또는 활성화해서 보안 강화 가능
+-- alter table chat_sessions enable row level security;
 ```
 
 ### 2. API 키 복사
