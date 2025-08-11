@@ -261,7 +261,7 @@ export default function ChatInterface() {
 
       if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
         // .docx 파일 처리
-        const mammoth = (await import('mammoth')).default
+        const mammoth = (await import('mammoth')) as any
         const arrayBuffer = await file.arrayBuffer()
         const result = await mammoth.extractRawText({ arrayBuffer })
         extractedText = result.value
