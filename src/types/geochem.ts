@@ -121,4 +121,20 @@ export interface PCASuggestion {
   expectedVariance: number
   correlation: number
   confidence: number
+}
+
+// GPT 4o 대피소 관련 타입들
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  timestamp: Date
+}
+
+export interface ChatSession {
+  id?: string // Supabase UUID
+  session_id: string // User-defined session ID
+  messages: ChatMessage[]
+  created_at?: string
+  updated_at?: string
 } 

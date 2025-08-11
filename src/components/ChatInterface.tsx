@@ -2,13 +2,10 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { Send, Bot, User, Settings, Trash2, Copy, Download, MessageCircle, ArrowLeft, Upload } from 'lucide-react'
+import { ChatMessage } from '@/types/geochem'
 
-interface Message {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  timestamp: Date
-}
+// Message는 ChatMessage와 동일하지만 호환성을 위해 별칭 사용
+type Message = ChatMessage
 
 interface ChatConfig {
   model: 'gpt-4o' | 'gpt-4o-mini' | 'gpt-4' | 'gpt-4-turbo' | 'gpt-3.5-turbo'

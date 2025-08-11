@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { ChatMessage, ChatSession } from '@/types/geochem'
 
 // Supabase 환경변수 체크
 const hasSupabaseConfig = process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -10,17 +11,6 @@ const getSupabase = async () => {
   }
   const { supabase } = await import('@/lib/supabase')
   return supabase
-}
-
-interface ChatMessage {
-  role: 'system' | 'user' | 'assistant'
-  content: string
-  timestamp: string | Date
-}
-
-interface ChatSession {
-  session_id: string
-  messages: ChatMessage[]
 }
 
 // 채팅 세션 저장
@@ -44,6 +34,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Date 객체를 string으로 변환 (JSON 호환성)
+    const processedMessages = messages.map(msg => ({
+      ...msg,
+      timestamp: msg.timestamp instanceof Date ? msg.timestamp.toISOString() : msg.timestamp
+    }))
+
     // 기존 세션 확인
     const { data: existingSession } = await supabase
       .from('chat_sessions')
@@ -56,7 +52,7 @@ export async function POST(request: NextRequest) {
       const { data, error } = await supabase
         .from('chat_sessions')
         .update({
-          messages: messages,
+          messages: processedMessages,
           updated_at: new Date().toISOString()
         })
         .eq('session_id', session_id)
@@ -77,7 +73,7 @@ export async function POST(request: NextRequest) {
         .from('chat_sessions')
         .insert({
           session_id: session_id,
-          messages: messages,
+          messages: processedMessages,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
