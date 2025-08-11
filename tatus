@@ -1,0 +1,10 @@
+[33m1c18ad7[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m  Fix: mammoth 타입 에러 수정 및 최종 배포 준비
+[33m8210490[m  Fix: 프로젝트 구조 최적화 - 루트 레벨로 이동하여 Vercel 배포 문제 해결
+[33m21c1585[m feat: Light version of PCA interpretation for faster response
+[33m2d71a4c[m fix: Improve PCA interpretation API error handling and timeout
+[33ma88749d[m feat: Add AI-powered PCA interpretation feature
+[33m97477b3[m feat: Add AI interpretation button to PCA results panel
+[33m2743727[m Fix all remaining TypeScript errors - Complete build fix
+[33mc5b3de4[m Fix TypeScript error: Add missing typeColumn property
+[33m93e3674[m Fix PCA analysis issues and add cluster debugging
+[33m835b44a[m feat: Enhanced PCA analysis with detailed results table and improved recommendations - Added comprehensive PCA results table with loadings, cluster averages, and interpretations - Improved PCA recommendation algorithm to filter out weak PC2 components - Smart correlation-based variable grouping (threshold 0.6) - Estimated variance explanation validation (PC2 >= 10%) - Color-coded loading significance indicators - Professional statistical interpretation guide - Fixed interface conflicts and updated to new PCASuggestion format - Version 0.5.1

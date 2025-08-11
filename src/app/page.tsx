@@ -5,8 +5,9 @@ import FileUpload from '@/components/FileUpload'
 import DataViewer from '@/components/DataViewer'
 import AnalysisPanel from '@/components/AnalysisPanel'
 import ScanMode from '@/components/ScanMode'
+import ChatInterface from '@/components/ChatInterface'
 import { GeochemData, ColumnSelection, ScanResult, ScanSummary } from '@/types/geochem'
-import { BarChart3, Scan, ArrowLeft } from 'lucide-react'
+import { BarChart3, Scan, ArrowLeft, MessageCircle } from 'lucide-react'
 
 export default function Home() {
   const [data, setData] = useState<GeochemData | null>(null)
@@ -16,7 +17,7 @@ export default function Home() {
     useTypeColumn: false,
     selectedTypeColumn: undefined
   })
-  const [mode, setMode] = useState<'analysis' | 'scan'>('analysis')
+  const [mode, setMode] = useState<'analysis' | 'scan' | 'chat'>('analysis')
   const [cameFromScan, setCameFromScan] = useState(false)
   const [scanResults, setScanResults] = useState<ScanResult[]>([])
   const [scanSummary, setScanSummary] = useState<ScanSummary | null>(null)
@@ -69,6 +70,35 @@ export default function Home() {
   // 모드 변경 처리 (PCA → 분석 모드 전환)
   const handleModeChange = (newMode: 'analysis' | 'scan') => {
     setMode(newMode)
+  }
+
+  // Chat 모드 렌더링
+  if (mode === 'chat') {
+    return (
+      <main className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 p-8">
+        <div className="max-w-7xl mx-auto">
+          <header className="text-center mb-8">
+            <div className="flex items-center justify-center mb-4">
+              <button
+                onClick={() => setMode('analysis')}
+                className="flex items-center px-4 py-2 text-sm bg-white shadow-md rounded-lg hover:bg-gray-50 mr-4"
+              >
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                분석 모드로 돌아가기
+              </button>
+              <h1 className="text-4xl font-bold text-gray-800">
+                GPT 4o 대피소 🏠
+              </h1>
+            </div>
+            <p className="text-gray-600">
+              최신 GPT-4o 모델을 활용한 SCI 논문 검토 및 영작 도우미
+            </p>
+          </header>
+          
+          <ChatInterface />
+        </div>
+      </main>
+    )
   }
 
   if (mode === 'scan' && data) {
@@ -147,38 +177,51 @@ export default function Home() {
           </p>
           
           {/* 모드 선택 버튼 */}
-          {data && !cameFromScan && (
-            <div className="flex justify-center mt-4 space-x-4">
-              <button
-                onClick={() => {
-                  setMode('analysis')
-                  setCameFromScan(false)
-                }}
-                className={`flex items-center px-6 py-3 rounded-lg font-medium transition-all ${
-                  mode === 'analysis' 
-                    ? 'bg-blue-600 text-white shadow-lg' 
-                    : 'bg-white text-gray-700 shadow-md hover:shadow-lg'
-                }`}
-              >
-                <BarChart3 className="h-5 w-5 mr-2" />
-                기본 분석 모드
-              </button>
-              <button
-                onClick={() => {
-                  setMode('scan')
-                  setCameFromScan(false)
-                }}
-                className={`flex items-center px-6 py-3 rounded-lg font-medium transition-all ${
-                  mode === 'scan' 
-                    ? 'bg-purple-600 text-white shadow-lg' 
-                    : 'bg-white text-gray-700 shadow-md hover:shadow-lg'
-                }`}
-              >
-                <Scan className="h-5 w-5 mr-2" />
-                스캔 모드 (전체 분석)
-              </button>
-            </div>
-          )}
+          <div className="flex justify-center mt-4 space-x-4">
+            {data && !cameFromScan && (
+              <>
+                <button
+                  onClick={() => {
+                    setMode('analysis')
+                    setCameFromScan(false)
+                  }}
+                  className={`flex items-center px-6 py-3 rounded-lg font-medium transition-all ${
+                    mode === 'analysis' 
+                      ? 'bg-blue-600 text-white shadow-lg' 
+                      : 'bg-white text-gray-700 shadow-md hover:shadow-lg'
+                  }`}
+                >
+                  <BarChart3 className="h-5 w-5 mr-2" />
+                  기본 분석 모드
+                </button>
+                <button
+                  onClick={() => {
+                    setMode('scan')
+                    setCameFromScan(false)
+                  }}
+                  className={`flex items-center px-6 py-3 rounded-lg font-medium transition-all ${
+                    mode === 'scan' 
+                      ? 'bg-purple-600 text-white shadow-lg' 
+                      : 'bg-white text-gray-700 shadow-md hover:shadow-lg'
+                  }`}
+                >
+                  <Scan className="h-5 w-5 mr-2" />
+                  스캔 모드 (전체 분석)
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => setMode('chat')}
+              className={`flex items-center px-6 py-3 rounded-lg font-medium transition-all ${
+                mode === 'chat' 
+                  ? 'bg-green-600 text-white shadow-lg' 
+                  : 'bg-white text-gray-700 shadow-md hover:shadow-lg'
+              }`}
+            >
+              <MessageCircle className="h-5 w-5 mr-2" />
+              GPT 4o 대피소
+            </button>
+          </div>
           
           {/* 스캔에서 온 경우 현재 선택된 조합 표시 */}
           {cameFromScan && selectedColumns.x && selectedColumns.y && (
