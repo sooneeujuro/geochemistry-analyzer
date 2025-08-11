@@ -16,18 +16,25 @@ const getSupabase = async () => {
 // 채팅 세션 저장
 export async function POST(request: NextRequest) {
   try {
+    console.log('[POST] 채팅 세션 저장 시작')
     const supabase = await getSupabase()
     
     if (!supabase) {
+      console.log('[POST] Supabase 설정 없음')
       return NextResponse.json(
         { error: 'Supabase가 설정되지 않았습니다. 로컬 저장만 사용하세요.' },
         { status: 503 }
       )
     }
+    console.log('[POST] Supabase 연결 성공')
 
-    const { session_id, messages }: ChatSession = await request.json()
+    const body = await request.json()
+    console.log('[POST] 요청 데이터:', { session_id: body.session_id, messageCount: body.messages?.length })
+    
+    const { session_id, messages }: ChatSession = body
 
     if (!session_id || !messages) {
+      console.log('[POST] 필수 데이터 누락:', { session_id: !!session_id, messages: !!messages })
       return NextResponse.json(
         { error: 'session_id와 messages가 필요합니다.' },
         { status: 400 }
@@ -101,19 +108,24 @@ export async function POST(request: NextRequest) {
 // 채팅 세션 불러오기
 export async function GET(request: NextRequest) {
   try {
+    console.log('[GET] 채팅 세션 조회 시작')
     const supabase = await getSupabase()
     
     if (!supabase) {
+      console.log('[GET] Supabase 설정 없음')
       return NextResponse.json(
         { error: 'Supabase가 설정되지 않았습니다. 로컬 저장만 사용하세요.' },
         { status: 503 }
       )
     }
+    console.log('[GET] Supabase 연결 성공')
 
     const { searchParams } = new URL(request.url)
     const session_id = searchParams.get('session_id')
+    console.log('[GET] 요청된 session_id:', session_id)
 
     if (!session_id) {
+      console.log('[GET] session_id 누락')
       return NextResponse.json(
         { error: 'session_id가 필요합니다.' },
         { status: 400 }
