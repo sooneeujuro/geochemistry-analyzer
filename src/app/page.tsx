@@ -68,7 +68,7 @@ export default function Home() {
   }
 
   // 모드 변경 처리 (PCA → 분석 모드 전환)
-  const handleModeChange = (newMode: 'analysis' | 'scan') => {
+  const handleModeChange = (newMode: 'analysis' | 'scan' | 'chat') => {
     setMode(newMode)
   }
 
