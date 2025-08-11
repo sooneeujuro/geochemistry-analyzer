@@ -132,8 +132,6 @@ export default function ChatInterface() {
     if (userSessionId && isAuthenticated) {
       // 로컬 스토리지에 저장
       localStorage.setItem(`gpt-shelter-history-${userSessionId}`, JSON.stringify(updatedMessages))
-      
-      // 로컬 저장만 사용 (Supabase 비활성화)
     }
   }
 
