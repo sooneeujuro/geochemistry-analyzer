@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Harmony Of Blue Color Scheme */
+  --cobalt-blue: #0357AF;
+  --true-blue: #0180CC;
+  --maya-blue: #74CEF7;
+  --non-photo-blue: #9BE8F0;
+  --bubbles: #E6FBFA;
+  --accent-orange: #E4815A;
+}
+
+body {
+  background: linear-gradient(135deg, var(--bubbles) 0%, var(--non-photo-blue) 100%);
+  min-height: 100vh;
+}
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 214, 219, 220;
+  --background-end-rgb: 255, 255, 255;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground-rgb: 255, 255, 255;
+    --background-start-rgb: 0, 0, 0;
+    --background-end-rgb: 0, 0, 0;
+  }
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))
+    )
+    rgb(var(--background-start-rgb));
+} 
