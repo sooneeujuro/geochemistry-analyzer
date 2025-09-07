@@ -193,23 +193,18 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
         yValue = numerator / denominator
       }
 
-      let type = 'Unknown'
+      let type = 'Data Point'
       if (isPCAMode && clusterData.length > index) {
         type = `Cluster ${clusterData[index]}`
       } else {
-        // type 컬럼을 찾아서 사용
-        const typeColumn = data.headers.find(header => 
-          header.toLowerCase().includes('type') || 
-          header.toLowerCase().includes('category') ||
-          header.toLowerCase().includes('group') ||
-          header.toLowerCase().includes('class')
-        )
+        // 일반적인 타입 컬럼명들을 시도
+        const possibleTypeColumns = ['Type', 'type', 'Category', 'category', 'Group', 'group', 'Class', 'class']
         
-        if (typeColumn && row[typeColumn]) {
-          type = row[typeColumn]
-        } else {
-          // 기본값으로 데이터 인덱스 사용
-          type = `Data ${index + 1}`
+        for (const col of possibleTypeColumns) {
+          if (row[col] && typeof row[col] === 'string') {
+            type = row[col]
+            break
+          }
         }
       }
 
@@ -221,8 +216,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
         ...row
       }
     }).filter(item => !isNaN(item.x) && !isNaN(item.y) && isFinite(item.x) && isFinite(item.y))
-  }, [data, selectedColumns, isPCAMode, clusterData])
-
+  }, [data, selectedColumns, isPCAMode, clusterData])ㅍ
   // 타입별 데이터 그룹화 (고정된 색상 매핑)
   const { typeGroups, fixedColorMap } = useMemo(() => {
     const groups: Record<string, typeof chartData> = {}
