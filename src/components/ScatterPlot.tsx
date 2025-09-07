@@ -16,10 +16,10 @@ interface ScatterPlotProps {
     count: number
     pearsonCorr?: number
     spearmanCorr?: number
-    rSquared?: number
-    linearSlope?: number
-    linearIntercept?: number
     pValue?: number
+    rSquared?: number
+    slope?: number
+    intercept?: number
   }>
 }
 
@@ -78,14 +78,7 @@ const CustomMarker = (props: any) => {
   }
 }
 
-export default function ScatterPlot({ 
-  data, 
-  selectedColumns, 
-  statistics, 
-  isPCAMode = false, 
-  clusterData = [], 
-  typeStatistics = [] 
-}: ScatterPlotProps) {
+export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMode = false, clusterData = [], typeStatistics = [] }: ScatterPlotProps) {
   const chartRef = useRef<HTMLDivElement>(null)
   
   const [styleOptions, setStyleOptions] = useState<ChartStyleOptions>({
@@ -95,6 +88,7 @@ export default function ScatterPlot({
     axisNumberSize: 12,
     axisTitleSize: 14
   })
+  
   const [plotOptions, setPlotOptions] = useState<PlotStyleOptions>({
     size: 60,
     shape: 'circle',
@@ -102,188 +96,156 @@ export default function ScatterPlot({
     strokeWidth: 1,
     strokeColor: '#000000',
     useCustomColors: false,
-    customColors: ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#F97316', '#06B6D4', '#84CC16']
+    customColors: ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#F97316', '#06B6D4', '#84CC16'],
+    showGridlines: true,
+    backgroundColor: '#FFFFFF'
   })
-  const [showStylePanel, setShowStylePanel] = useState(false)
-  const [showAxisPanel, setShowAxisPanel] = useState(false)
-  const [showPlotPanel, setShowPlotPanel] = useState(false)
-  const [showExportDialog, setShowExportDialog] = useState(false)
-  const [showTypePanel, setShowTypePanel] = useState(false)
-  const [exportFormat, setExportFormat] = useState<'png' | 'svg'>('png')
-  const [customFileName, setCustomFileName] = useState('')
+
+  // 타입별 체크박스 상태
+  const [visibleTypes, setVisibleTypes] = useState<Record<string, boolean>>({})
   
-  // 상태 관리
-  const [visibleTypes, setVisibleTypes] = useState<{ [key: string]: boolean }>({})
+  // 축 범위 설정
   const [useVisibleDataRange, setUseVisibleDataRange] = useState(false)
-  const [showOverallRegression, setShowOverallRegression] = useState(true)
-  const [showTypeRegressions, setShowTypeRegressions] = useState(true)
   
-  // 수정: 플롯 스타일로 이동된 전체 추세선 스타일 옵션
-  const [overallRegressionStyle, setOverallRegressionStyle] = useState({
-    color: '#EF4444',
+  // 추세선 표시 설정
+  const [showOverallTrend, setShowOverallTrend] = useState(true)
+  const [showTypeTrends, setShowTypeTrends] = useState<Record<string, boolean>>({})
+  const [showAllTypeTrends, setShowAllTypeTrends] = useState(false)
+  
+  // 추세선 스타일 설정
+  const [trendlineStyle, setTrendlineStyle] = useState({
+    color: '#FF0000',
     strokeWidth: 2,
     opacity: 0.8
   })
-  
-  // 전체 데이터 기반 고정 축 범위
-  const [fullDataAxisRange, setFullDataAxisRange] = useState<{
-    x: { min: number, max: number },
-    y: { min: number, max: number }
-  }>({ x: { min: 0, max: 1 }, y: { min: 0, max: 1 } })
-  
-  // 축 범위 초기화 완료 여부
-  const [axisRangeInitialized, setAxisRangeInitialized] = useState(false)
-  
-  // PCA 전용 클러스터 색상
-  const pcaClusterColors = [
-    '#E53E3E', '#3182CE', '#38A169', '#D69E2E', '#805AD5', '#DD6B20', '#319795', '#E53E3E'
-  ]
-  
-  // 축 범위 상태
-  const [xAxisRange, setXAxisRange] = useState<AxisRange>({ auto: true, min: 0, max: 100 })
-  const [yAxisRange, setYAxisRange] = useState<AxisRange>({ auto: true, min: 0, max: 100 })
 
+  const [axisRange, setAxisRange] = useState<AxisRange>({
+    xMin: 'auto', xMax: 'auto',
+    yMin: 'auto', yMax: 'auto'
+  })
+  const [showStylePanel, setShowStylePanel] = useState(false)
+  const [showPlotPanel, setShowPlotPanel] = useState(false)
+  const [showAxisPanel, setShowAxisPanel] = useState(false)
+
+  // 디버깅 로그 추가
+  console.log('ScatterPlot 렌더링:', {
+    isPCAMode,
+    clusterDataLength: clusterData.length,
+    dataLength: data.data.length,
+    selectedColumns: selectedColumns,
+    typeStatisticsLength: typeStatistics.length,
+    statistics: statistics,
+    typeStatistics: typeStatistics
+  })
+
+  // 축 데이터 계산 함수
+  const calculateAxisData = (axisConfig: NonNullable<ColumnSelection['x']>) => {
+    if (axisConfig.type === 'single') {
+      return data.data
+        .map(row => parseFloat(row[axisConfig.numerator]))
+        .filter(val => !isNaN(val) && isFinite(val))
+    } else {
+      return data.data
+        .map(row => {
+          const numerator = parseFloat(row[axisConfig.numerator])
+          const denominator = parseFloat(row[axisConfig.denominator!])
+          return numerator / denominator
+        })
+        .filter(val => !isNaN(val) && isFinite(val))
+    }
+  }
+
+  // 차트 데이터 준비
   const chartData = useMemo(() => {
     if (!selectedColumns.x || !selectedColumns.y) return []
 
-    return data.data
-      .map((row, index) => {
-        let xValue: number
-        if (selectedColumns.x!.type === 'single') {
-          xValue = parseFloat(row[selectedColumns.x!.numerator])
-        } else {
-          const numerator = parseFloat(row[selectedColumns.x!.numerator])
-          const denominator = parseFloat(row[selectedColumns.x!.denominator!])
-          xValue = numerator / denominator
-        }
+    return data.data.map((row, index) => {
+      let xValue: number
+      if (selectedColumns.x!.type === 'single') {
+        xValue = parseFloat(row[selectedColumns.x!.numerator])
+      } else {
+        const numerator = parseFloat(row[selectedColumns.x!.numerator])
+        const denominator = parseFloat(row[selectedColumns.x!.denominator!])
+        xValue = numerator / denominator
+      }
 
-        let yValue: number
-        if (selectedColumns.y!.type === 'single') {
-          yValue = parseFloat(row[selectedColumns.y!.numerator])
-        } else {
-          const numerator = parseFloat(row[selectedColumns.y!.numerator])
-          const denominator = parseFloat(row[selectedColumns.y!.denominator!])
-          yValue = numerator / denominator
-        }
+      let yValue: number
+      if (selectedColumns.y!.type === 'single') {
+        yValue = parseFloat(row[selectedColumns.y!.numerator])
+      } else {
+        const numerator = parseFloat(row[selectedColumns.y!.numerator])
+        const denominator = parseFloat(row[selectedColumns.y!.denominator!])
+        yValue = numerator / denominator
+      }
 
-        return {
-          x: xValue,
-          y: yValue,
-          type: isPCAMode && clusterData.length > index
-            ? clusterData[index] === -1 
-              ? 'Invalid Data'
-              : `Cluster ${clusterData[index] + 1}`
-            : selectedColumns.useTypeColumn && selectedColumns.selectedTypeColumn 
-              ? row[selectedColumns.selectedTypeColumn] 
-              : 'default',
-          index
-        }
-      })
-      .filter(point => !isNaN(point.x) && !isNaN(point.y) && isFinite(point.x) && isFinite(point.y))
+      let type = 'Unknown'
+      if (isPCAMode && clusterData.length > index) {
+        type = `Cluster ${clusterData[index]}`
+      } else if (selectedColumns.type && row[selectedColumns.type]) {
+        type = row[selectedColumns.type]
+      }
+
+      return {
+        x: xValue,
+        y: yValue,
+        type: type,
+        originalIndex: index,
+        ...row
+      }
+    }).filter(item => !isNaN(item.x) && !isNaN(item.y) && isFinite(item.x) && isFinite(item.y))
   }, [data, selectedColumns, isPCAMode, clusterData])
 
-  // 고정 색상 매핑 (전체 데이터 기준)
-  const fixedTypeColors = useMemo(() => {
-    const colorMap: { [key: string]: string } = {}
+  // 타입별 데이터 그룹화 (고정된 색상 매핑)
+  const { typeGroups, fixedColorMap } = useMemo(() => {
+    const groups: Record<string, typeof chartData> = {}
+    const allTypes = Array.from(new Set(chartData.map(item => item.type))).sort()
     
-    if (isPCAMode) {
-      const types = Array.from(new Set(chartData.map(d => d.type))).sort()
-      types.forEach((type, index) => {
-        if (type === 'Invalid Data') {
-          colorMap[type] = '#9CA3AF'
-        } else {
-          const clusterIndex = parseInt(type.replace('Cluster ', '')) - 1
-          colorMap[type] = pcaClusterColors[clusterIndex % pcaClusterColors.length]
-        }
-      })
-    } else {
-      const types = Array.from(new Set(data.data.map(row => {
-        const type = selectedColumns.useTypeColumn && selectedColumns.selectedTypeColumn 
-          ? row[selectedColumns.selectedTypeColumn] 
-          : 'default'
-        return type
-      }))).sort()
-      
-      types.forEach((type, index) => {
-        if (plotOptions.useCustomColors) {
-          colorMap[type] = plotOptions.customColors[index % plotOptions.customColors.length]
-        } else {
-          const defaultColors = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#d084d0']
-          colorMap[type] = defaultColors[index % defaultColors.length]
-        }
-      })
-    }
-    
-    return colorMap
-  }, [data, selectedColumns.useTypeColumn, selectedColumns.selectedTypeColumn, plotOptions.useCustomColors, plotOptions.customColors, isPCAMode, chartData])
+    // 고정된 색상 맵 생성
+    const colorMap: Record<string, string> = {}
+    allTypes.forEach((type, index) => {
+      colorMap[type] = plotOptions.customColors[index % plotOptions.customColors.length]
+    })
 
-  // visibleTypes 초기화
-  useEffect(() => {
-    const types = Array.from(new Set(chartData.map(d => d.type)))
-    const initialVisibility: { [key: string]: boolean } = {}
-    types.forEach(type => {
-      initialVisibility[type] = true
+    chartData.forEach(item => {
+      if (!groups[item.type]) {
+        groups[item.type] = []
+      }
+      groups[item.type].push(item)
     })
-    setVisibleTypes(prev => {
-      const newVisibility = { ...initialVisibility }
-      Object.keys(prev).forEach(type => {
-        if (types.includes(type)) {
-          newVisibility[type] = prev[type]
-        }
-      })
-      return newVisibility
-    })
+
+    return { typeGroups: groups, fixedColorMap: colorMap }
+  }, [chartData, plotOptions.customColors])
+
+  // 전체 데이터 범위 계산 (모든 데이터 기준)
+  const fullDataRange = useMemo(() => {
+    if (chartData.length === 0) return { xMin: 0, xMax: 100, yMin: 0, yMax: 100 }
+    
+    const xValues = chartData.map(d => d.x)
+    const yValues = chartData.map(d => d.y)
+    
+    const xMin = Math.min(...xValues)
+    const xMax = Math.max(...xValues)
+    const yMin = Math.min(...yValues)
+    const yMax = Math.max(...yValues)
+    
+    // 여백 추가 (5%)
+    const xRange = xMax - xMin
+    const yRange = yMax - yMin
+    const xPadding = xRange * 0.05
+    const yPadding = yRange * 0.05
+    
+    return {
+      xMin: xMin - xPadding,
+      xMax: xMax + xPadding,
+      yMin: yMin - yPadding,
+      yMax: yMax + yPadding
+    }
   }, [chartData])
 
-  // 전체 데이터 기반 축 범위 계산 (한 번만 실행)
-  useEffect(() => {
-    if (chartData.length > 0 && !axisRangeInitialized) {
-      const xValues = chartData.map(d => d.x)
-      const yValues = chartData.map(d => d.y)
-      
-      const xMin = Math.min(...xValues)
-      const xMax = Math.max(...xValues)
-      const yMin = Math.min(...yValues)
-      const yMax = Math.max(...yValues)
-      
-      const xPadding = (xMax - xMin) * 0.1
-      const yPadding = (yMax - yMin) * 0.1
-      
-      const newFullRange = {
-        x: { 
-          min: Number((xMin - xPadding).toFixed(3)), 
-          max: Number((xMax + xPadding).toFixed(3)) 
-        },
-        y: { 
-          min: Number((yMin - yPadding).toFixed(3)), 
-          max: Number((yMax + yPadding).toFixed(3)) 
-        }
-      }
-      
-      setFullDataAxisRange(newFullRange)
-      
-      // 초기 축 범위 설정 (전체 데이터 기준)
-      setXAxisRange({
-        auto: true,
-        min: newFullRange.x.min,
-        max: newFullRange.x.max
-      })
-      setYAxisRange({
-        auto: true,
-        min: newFullRange.y.min,
-        max: newFullRange.y.max
-      })
-      
-      setAxisRangeInitialized(true)
-      console.log('축 범위 초기화 완료:', newFullRange)
-    }
-  }, [chartData, axisRangeInitialized])
-
-  // 표시 데이터 범위로 확대/축소 함수
-  const adjustToVisibleDataRange = () => {
-    const visibleData = chartData.filter(point => visibleTypes[point.type])
-    
-    if (visibleData.length === 0) return
+  // 표시되는 데이터 범위 계산 (체크박스 기준)
+  const visibleDataRange = useMemo(() => {
+    const visibleData = chartData.filter(item => visibleTypes[item.type] !== false)
+    if (visibleData.length === 0) return fullDataRange
     
     const xValues = visibleData.map(d => d.x)
     const yValues = visibleData.map(d => d.y)
@@ -293,1215 +255,587 @@ export default function ScatterPlot({
     const yMin = Math.min(...yValues)
     const yMax = Math.max(...yValues)
     
-    const xPadding = (xMax - xMin) * 0.1
-    const yPadding = (yMax - yMin) * 0.1
+    const xRange = xMax - xMin
+    const yRange = yMax - yMin
+    const xPadding = xRange * 0.05
+    const yPadding = yRange * 0.05
     
-    setXAxisRange({
-      auto: false,
-      min: Number((xMin - xPadding).toFixed(3)),
-      max: Number((xMax + xPadding).toFixed(3))
-    })
-    setYAxisRange({
-      auto: false,
-      min: Number((yMin - yPadding).toFixed(3)),
-      max: Number((yMax + yPadding).toFixed(3))
-    })
-    
-    setUseVisibleDataRange(true)
-    console.log('표시 데이터 범위로 확대 완료')
-  }
-
-  // 전체 데이터 범위로 복원 함수
-  const resetToFullDataRange = () => {
-    setXAxisRange({
-      auto: true,
-      min: fullDataAxisRange.x.min,
-      max: fullDataAxisRange.x.max
-    })
-    setYAxisRange({
-      auto: true,
-      min: fullDataAxisRange.y.min,
-      max: fullDataAxisRange.y.max
-    })
-    setUseVisibleDataRange(false)
-    console.log('전체 데이터 범위로 복원 완료')
-  }
-
-  // 회귀선 계산에 사용할 X 범위
-  const regressionXRange = useMemo(() => {
-    if (useVisibleDataRange) {
-      return { min: xAxisRange.min, max: xAxisRange.max }
-    } else {
-      return { min: fullDataAxisRange.x.min, max: fullDataAxisRange.x.max }
+    return {
+      xMin: xMin - xPadding,
+      xMax: xMax + xPadding,
+      yMin: yMin - yPadding,
+      yMax: yMax + yPadding
     }
-  }, [useVisibleDataRange, xAxisRange, fullDataAxisRange])
+  }, [chartData, visibleTypes, fullDataRange])
 
-  // 수정: 전체 회귀선 계산 (더 엄격한 검증)
-  const regressionLine = useMemo(() => {
-    console.log('전체 회귀선 계산 시작:', {
-      hasSlope: !!statistics.linearSlope,
-      hasIntercept: !!statistics.linearIntercept,
-      slope: statistics.linearSlope,
-      intercept: statistics.linearIntercept,
-      slopeIsNumber: typeof statistics.linearSlope === 'number',
-      interceptIsNumber: typeof statistics.linearIntercept === 'number',
-      slopeIsFinite: statistics.linearSlope ? isFinite(statistics.linearSlope) : false,
-      interceptIsFinite: statistics.linearIntercept ? isFinite(statistics.linearIntercept) : false
-    })
+  // 실제 사용할 범위 결정
+  const currentRange = useVisibleDataRange ? visibleDataRange : fullDataRange
 
-    if (!statistics.linearSlope || 
-        !statistics.linearIntercept || 
-        typeof statistics.linearSlope !== 'number' || 
-        typeof statistics.linearIntercept !== 'number' ||
-        !isFinite(statistics.linearSlope) || 
-        !isFinite(statistics.linearIntercept)) {
-      console.log('전체 회귀선 계산 실패: 유효하지 않은 slope 또는 intercept')
-      return null
-    }
+  // 초기 체크박스 상태 설정
+  useEffect(() => {
+    const types = Object.keys(typeGroups)
+    const newVisibleTypes: Record<string, boolean> = {}
+    const newShowTypeTrends: Record<string, boolean> = {}
     
-    const xMin = regressionXRange.min
-    const xMax = regressionXRange.max
-    
-    const line = [
-      { x: xMin, y: statistics.linearSlope * xMin + statistics.linearIntercept },
-      { x: xMax, y: statistics.linearSlope * xMax + statistics.linearIntercept }
-    ]
-    
-    console.log('전체 회귀선 계산 성공:', { 
-      slope: statistics.linearSlope, 
-      intercept: statistics.linearIntercept,
-      xRange: regressionXRange,
-      line 
-    })
-    
-    return line
-  }, [statistics, regressionXRange])
-
-  // 수정: 타입별 회귀선 계산 (더 엄격한 검증과 디버깅)
-  const typeRegressionLines = useMemo(() => {
-    console.log('=== 타입별 회귀선 계산 시작 ===')
-    console.log('입력 데이터:', {
-      typeStatisticsLength: typeStatistics.length,
-      visibleTypesCount: Object.keys(visibleTypes).filter(t => visibleTypes[t]).length,
-      allVisibleTypes: Object.keys(visibleTypes).filter(t => visibleTypes[t]),
-      regressionXRange
-    })
-
-    if (!typeStatistics || typeStatistics.length === 0) {
-      console.log('타입별 통계 데이터가 없음')
-      return []
-    }
-    
-    const xMin = regressionXRange.min
-    const xMax = regressionXRange.max
-    
-    // 모든 타입별 통계를 하나씩 검사
-    const validRegressions: Array<{
-      type: string;
-      line: Array<{ x: number; y: number }>;
-      color: string;
-    }> = []
-
-    typeStatistics.forEach((stat, index) => {
-      console.log(`\n--- 타입 ${stat.type} (${index + 1}/${typeStatistics.length}) 검사 ---`)
-      
-      // 1. 기본 값들 검사
-      const hasValidSlope = stat.linearSlope !== undefined && 
-                          stat.linearSlope !== null &&
-                          typeof stat.linearSlope === 'number' && 
-                          !isNaN(stat.linearSlope) && 
-                          isFinite(stat.linearSlope)
-      
-      const hasValidIntercept = stat.linearIntercept !== undefined && 
-                              stat.linearIntercept !== null &&
-                              typeof stat.linearIntercept === 'number' && 
-                              !isNaN(stat.linearIntercept) && 
-                              isFinite(stat.linearIntercept)
-      
-      const isTypeVisible = visibleTypes[stat.type] === true
-      
-      console.log('검사 결과:', {
-        type: stat.type,
-        slope: stat.linearSlope,
-        intercept: stat.linearIntercept,
-        hasValidSlope,
-        hasValidIntercept,
-        isTypeVisible,
-        slopeType: typeof stat.linearSlope,
-        interceptType: typeof stat.linearIntercept
-      })
-      
-      // 2. 모든 조건을 만족하는지 확인
-      if (hasValidSlope && hasValidIntercept && isTypeVisible) {
-        const line = [
-          { x: xMin, y: stat.linearSlope! * xMin + stat.linearIntercept! },
-          { x: xMax, y: stat.linearSlope! * xMax + stat.linearIntercept! }
-        ]
-        
-        const color = fixedTypeColors[stat.type] || '#8884d8'
-        
-        const regression = {
-          type: stat.type,
-          line,
-          color
-        }
-        
-        validRegressions.push(regression)
-        console.log(`✅ 타입 ${stat.type} 회귀선 생성 성공:`, regression)
-      } else {
-        console.log(`❌ 타입 ${stat.type} 회귀선 생성 실패`)
+    types.forEach(type => {
+      if (!(type in visibleTypes)) {
+        newVisibleTypes[type] = true
+      }
+      if (!(type in showTypeTrends)) {
+        newShowTypeTrends[type] = false
       }
     })
     
-    console.log('=== 타입별 회귀선 계산 완료 ===')
-    console.log('최종 결과:', {
-      totalValidRegressions: validRegressions.length,
-      validTypes: validRegressions.map(r => r.type)
-    })
-    
-    return validRegressions
-  }, [typeStatistics, regressionXRange, visibleTypes, fixedTypeColors])
-
-  const typeGroups = useMemo(() => {
-    if (!selectedColumns.useTypeColumn || !selectedColumns.selectedTypeColumn) {
-      return [{ type: 'default', data: chartData, color: fixedTypeColors['default'] || plotOptions.customColors[0] }]
+    if (Object.keys(newVisibleTypes).length > 0) {
+      setVisibleTypes(prev => ({ ...prev, ...newVisibleTypes }))
     }
-    
-    const groups = new Map<string, typeof chartData>()
-    chartData.forEach(point => {
-      const type = point.type
-      if (!groups.has(type)) {
-        groups.set(type, [])
-      }
-      groups.get(type)!.push(point)
-    })
-    
-    return Array.from(groups.entries())
-      .filter(([type]) => visibleTypes[type])
-      .map(([type, data]) => ({
-        type,
-        data,
-        color: fixedTypeColors[type] || '#8884d8'
-      }))
-  }, [chartData, selectedColumns.useTypeColumn, selectedColumns.selectedTypeColumn, visibleTypes, fixedTypeColors])
+    if (Object.keys(newShowTypeTrends).length > 0) {
+      setShowTypeTrends(prev => ({ ...prev, ...newShowTypeTrends }))
+    }
+  }, [typeGroups])
 
-  // 타입 표시/숨김 토글 함수
-  const toggleType = (type: string) => {
+  // 체크박스 토글 함수
+  const toggleTypeVisibility = (type: string) => {
     setVisibleTypes(prev => ({
       ...prev,
       [type]: !prev[type]
     }))
   }
 
-  // 모든 타입 표시/숨김 토글
   const toggleAllTypes = () => {
     const allVisible = Object.values(visibleTypes).every(v => v)
-    const newState: { [key: string]: boolean } = {}
-    Object.keys(visibleTypes).forEach(type => {
-      newState[type] = !allVisible
+    const newState = !allVisible
+    const newVisibleTypes: Record<string, boolean> = {}
+    Object.keys(typeGroups).forEach(type => {
+      newVisibleTypes[type] = newState
     })
-    setVisibleTypes(newState)
+    setVisibleTypes(newVisibleTypes)
   }
 
-  // 숫자 포맷팅 함수
-  const formatNumber = (value: number): string => {
+  // 추세선 토글 함수들
+  const toggleTypeTrendline = (type: string) => {
+    setShowTypeTrends(prev => ({
+      ...prev,
+      [type]: !prev[type]
+    }))
+  }
+
+  const toggleAllTypeTrendlines = () => {
+    const newState = !showAllTypeTrends
+    setShowAllTypeTrends(newState)
+    const newShowTypeTrends: Record<string, boolean> = {}
+    Object.keys(typeGroups).forEach(type => {
+      newShowTypeTrends[type] = newState
+    })
+    setShowTypeTrends(newShowTypeTrends)
+  }
+
+  // 추세선 데이터 생성 함수
+  const generateTrendlinePoints = (slope: number, intercept: number, range: { xMin: number, xMax: number }) => {
+    if (!isFinite(slope) || !isFinite(intercept)) return []
+    
+    const points = []
+    const step = (range.xMax - range.xMin) / 100
+    
+    for (let x = range.xMin; x <= range.xMax; x += step) {
+      const y = slope * x + intercept
+      points.push({ x, y })
+    }
+    
+    return points
+  }
+
+  // 표시할 데이터 필터링
+  const visibleData = chartData.filter(item => visibleTypes[item.type] !== false)
+
+  const formatAxisLabel = (value: any) => {
+    if (typeof value !== 'number' || !isFinite(value)) return ''
+    
     switch (styleOptions.numberFormat) {
       case 'scientific':
         return value.toExponential(2)
-      case 'comma':
-        return value.toLocaleString()
+      case 'engineering':
+        const exp = Math.floor(Math.log10(Math.abs(value)) / 3) * 3
+        const mantissa = value / Math.pow(10, exp)
+        return `${mantissa.toFixed(2)}e${exp}`
       default:
-        return value.toString()
+        return value.toFixed(3)
     }
   }
 
-  // 기본 파일명 생성
-  const generateDefaultFileName = (): string => {
-    const originalFileName = data.fileName.replace(/\.[^/.]+$/, "")
-    const xLabel = selectedColumns.x?.label || 'X'
-    const yLabel = selectedColumns.y?.label || 'Y'
-    return `${originalFileName}_${xLabel} vs ${yLabel}`
+  const getAxisTitle = (config: NonNullable<ColumnSelection['x']>) => {
+    if (config.type === 'single') {
+      return config.numerator
+    } else {
+      return `${config.numerator}/${config.denominator}`
+    }
   }
 
-  // 그래프 내보내기 함수
-  const exportChart = async (format: 'png' | 'svg', fileName?: string) => {
+  const exportChart = async () => {
     if (!chartRef.current) return
 
-    const finalFileName = fileName || generateDefaultFileName()
-
     try {
-      if (format === 'png') {
-        const html2canvas = (await import('html2canvas' as any)).default
-        
-        const chartContainer = chartRef.current.querySelector('#chart-container') as HTMLElement
-        
-        if (chartContainer) {
-          const canvas = await html2canvas(chartContainer, {
-            backgroundColor: 'white',
-            scale: 2,
-            useCORS: true,
-            width: 600,
-            height: 600,
-            x: 0,
-            y: 0,
-            scrollX: 0,
-            scrollY: 0,
-            ignoreElements: (element: HTMLElement) => {
-              return element.classList?.contains('recharts-tooltip-wrapper') || false
-            }
-          })
-          
-          const ctx = canvas.getContext('2d')!
-          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-          const data = imageData.data
-          
-          let top = 0, bottom = canvas.height, left = 0, right = canvas.width
-          
-          for (let y = 0; y < canvas.height; y++) {
-            let hasContent = false
-            for (let x = 0; x < canvas.width; x++) {
-              const idx = (y * canvas.width + x) * 4
-              if (data[idx] !== 255 || data[idx + 1] !== 255 || data[idx + 2] !== 255 || data[idx + 3] !== 255) {
-                hasContent = true
-                break
-              }
-            }
-            if (hasContent) {
-              top = Math.max(0, y - 10)
-              break
-            }
-          }
-          
-          for (let y = canvas.height - 1; y >= top; y--) {
-            let hasContent = false
-            for (let x = 0; x < canvas.width; x++) {
-              const idx = (y * canvas.width + x) * 4
-              if (data[idx] !== 255 || data[idx + 1] !== 255 || data[idx + 2] !== 255 || data[idx + 3] !== 255) {
-                hasContent = true
-                break
-              }
-            }
-            if (hasContent) {
-              bottom = Math.min(canvas.height, y + 10)
-              break
-            }
-          }
-          
-          for (let x = 0; x < canvas.width; x++) {
-            let hasContent = false
-            for (let y = top; y < bottom; y++) {
-              const idx = (y * canvas.width + x) * 4
-              if (data[idx] !== 255 || data[idx + 1] !== 255 || data[idx + 2] !== 255 || data[idx + 3] !== 255) {
-                hasContent = true
-                break
-              }
-            }
-            if (hasContent) {
-              left = Math.max(0, x - 10)
-              break
-            }
-          }
-          
-          for (let x = canvas.width - 1; x >= left; x--) {
-            let hasContent = false
-            for (let y = top; y < bottom; y++) {
-              const idx = (y * canvas.width + x) * 4
-              if (data[idx] !== 255 || data[idx + 1] !== 255 || data[idx + 2] !== 255 || data[idx + 3] !== 255) {
-                hasContent = true
-                break
-              }
-            }
-            if (hasContent) {
-              right = Math.min(canvas.width, x + 10)
-              break
-            }
-          }
-          
-          const cropWidth = right - left
-          const cropHeight = bottom - top
-          
-          const croppedCanvas = document.createElement('canvas')
-          const croppedCtx = croppedCanvas.getContext('2d')!
-          
-          const maxSize = Math.max(cropWidth, cropHeight)
-          croppedCanvas.width = maxSize
-          croppedCanvas.height = maxSize
-          
-          croppedCtx.fillStyle = 'white'
-          croppedCtx.fillRect(0, 0, maxSize, maxSize)
-          
-          const offsetX = (maxSize - cropWidth) / 2
-          const offsetY = (maxSize - cropHeight) / 2
-          
-          croppedCtx.drawImage(
-            canvas,
-            left, top, cropWidth, cropHeight,
-            offsetX, offsetY, cropWidth, cropHeight
-          )
-          
-          const link = document.createElement('a')
-          link.download = `${finalFileName}.png`
-          link.href = croppedCanvas.toDataURL('image/png')
-          link.click()
-        } else {
-          const canvas = await html2canvas(chartRef.current, {
-            backgroundColor: 'white',
-            scale: 2,
-            useCORS: true
-          })
-          
-          const link = document.createElement('a')
-          link.download = `${finalFileName}.png`
-          link.href = canvas.toDataURL('image/png')
-          link.click()
-        }
-      } else {
-        const svgElement = chartRef.current.querySelector('svg')
-        if (svgElement) {
-          const clonedSVG = svgElement.cloneNode(true) as SVGElement
-          
-          const bbox = svgElement.getBBox()
-          const padding = 20
-          
-          const viewBoxX = Math.max(0, bbox.x - padding)
-          const viewBoxY = Math.max(0, bbox.y - padding)
-          const viewBoxWidth = bbox.width + (padding * 2)
-          const viewBoxHeight = bbox.height + (padding * 2)
-          
-          const maxDimension = Math.max(viewBoxWidth, viewBoxHeight)
-          const centerX = viewBoxX + viewBoxWidth / 2
-          const centerY = viewBoxY + viewBoxHeight / 2
-          
-          const finalViewBoxX = centerX - maxDimension / 2
-          const finalViewBoxY = centerY - maxDimension / 2
-          
-          clonedSVG.setAttribute('width', '500')
-          clonedSVG.setAttribute('height', '500')
-          clonedSVG.setAttribute('viewBox', `${finalViewBoxX} ${finalViewBoxY} ${maxDimension} ${maxDimension}`)
-          
-          const svgData = new XMLSerializer().serializeToString(clonedSVG)
-          const svgBlob = new Blob([svgData], { type: 'image/svg+xml' })
-          const svgUrl = URL.createObjectURL(svgBlob)
-          
-          const link = document.createElement('a')
-          link.download = `${finalFileName}.svg`
-          link.href = svgUrl
-          link.click()
-          
-          URL.revokeObjectURL(svgUrl)
-        }
-      }
+      const html2canvas = (await import('html2canvas')).default
+      const canvas = await html2canvas(chartRef.current, {
+        backgroundColor: plotOptions.backgroundColor,
+        scale: 2,
+        logging: false,
+        useCORS: true
+      })
+
+      const link = document.createElement('a')
+      link.download = 'scatter-plot.png'
+      link.href = canvas.toDataURL()
+      link.click()
     } catch (error) {
       console.error('Export failed:', error)
-      alert('내보내기에 실패했습니다.')
+      alert('이미지 내보내기에 실패했습니다.')
     }
-  }
-
-  // 내보내기 대화상자 열기
-  const openExportDialog = (format: 'png' | 'svg') => {
-    setExportFormat(format)
-    setCustomFileName(generateDefaultFileName())
-    setShowExportDialog(true)
-  }
-
-  // 내보내기 실행
-  const handleExport = () => {
-    exportChart(exportFormat, customFileName)
-    setShowExportDialog(false)
-  }
-
-  const CustomTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length && selectedColumns.x && selectedColumns.y) {
-      const data = payload[0].payload
-      return (
-        <div 
-          className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg"
-          style={{ fontFamily: styleOptions.fontFamily }}
-        >
-          <p className="font-medium">{`${selectedColumns.x.label}: ${formatNumber(data.x)}`}</p>
-          <p className="font-medium">{`${selectedColumns.y.label}: ${formatNumber(data.y)}`}</p>
-          {data.type !== 'default' && (
-            <p className="text-sm text-gray-600">{`타입: ${data.type}`}</p>
-          )}
-        </div>
-      )
-    }
-    return null
   }
 
   if (!selectedColumns.x || !selectedColumns.y) {
-    return <div className="text-center py-8 text-gray-500">변수를 선택해주세요</div>
+    return (
+      <div className="p-6 text-center text-gray-500">
+        X축과 Y축을 선택해주세요
+      </div>
+    )
   }
-
-  const chartStyle = {
-    fontFamily: styleOptions.fontFamily,
-  }
-
-  const axisLabelStyle = {
-    fontSize: styleOptions.axisTitleSize,
-    fontWeight: styleOptions.axisTitleBold ? 'bold' : 'normal',
-    fontFamily: styleOptions.fontFamily,
-    fill: '#374151'
-  }
-
-  const axisTickStyle = {
-    fontSize: styleOptions.axisNumberSize,
-    fontFamily: styleOptions.fontFamily,
-    fill: '#6B7280'
-  }
-
-  // 축 도메인 설정 (항상 현재 설정된 범위 사용)
-  const xDomain = [xAxisRange.min, xAxisRange.max]
-  const yDomain = [yAxisRange.min, yAxisRange.max]
 
   return (
-    <div className="bg-white p-4 rounded-lg border">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-medium text-gray-800">
-          산점도: {selectedColumns.x.label} vs {selectedColumns.y.label}
-        </h3>
-        <div className="flex space-x-2">
-          {/* 타입 필터 버튼 */}
-          {selectedColumns.useTypeColumn && selectedColumns.selectedTypeColumn && (
-            <button
-              onClick={() => setShowTypePanel(!showTypePanel)}
-              className="px-3 py-2 text-sm bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-md flex items-center transition-colors"
-            >
-              <Eye className="h-4 w-4 mr-1" />
-              타입 필터
-            </button>
-          )}
-          
-          <button
-            onClick={() => setShowPlotPanel(!showPlotPanel)}
-            className="px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md flex items-center transition-colors"
-          >
-            <Shapes className="h-4 w-4 mr-1" />
-            플롯 스타일
-          </button>
-          <button
-            onClick={() => setShowAxisPanel(!showAxisPanel)}
-            className="px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md flex items-center transition-colors"
-          >
-            <Move3D className="h-4 w-4 mr-1" />
-            축 범위
-          </button>
-          <button
-            onClick={() => setShowStylePanel(!showStylePanel)}
-            className="px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md flex items-center transition-colors"
-          >
-            <Palette className="h-4 w-4 mr-1" />
-            차트 스타일
-          </button>
-          <div className="relative">
-            <button
-              onClick={() => {
-                const dropdown = document.getElementById('export-dropdown')
-                dropdown?.classList.toggle('hidden')
-              }}
-              className="px-3 py-2 text-sm bg-green-100 hover:bg-green-200 text-green-700 rounded-md flex items-center transition-colors"
-            >
-              <Download className="h-4 w-4 mr-1" />
-              내보내기
-            </button>
-            <div id="export-dropdown" className="hidden absolute right-0 mt-1 w-32 bg-white border border-gray-200 rounded-md shadow-lg z-10">
-              <button
-                onClick={() => openExportDialog('png')}
-                className="block w-full px-4 py-2 text-sm text-left hover:bg-gray-100 transition-colors"
-              >
-                PNG 파일
-              </button>
-              <button
-                onClick={() => openExportDialog('svg')}
-                className="block w-full px-4 py-2 text-sm text-left hover:bg-gray-100 transition-colors"
-              >
-                SVG 파일
-              </button>
-            </div>
-          </div>
-        </div>
+    <div className="space-y-4">
+      {/* 컨트롤 패널 */}
+      <div className="flex flex-wrap gap-2 p-4 bg-gray-50 rounded-lg">
+        <button
+          onClick={() => setShowStylePanel(!showStylePanel)}
+          className="flex items-center gap-2 px-3 py-2 bg-white border rounded-md hover:bg-gray-50"
+        >
+          <Palette className="w-4 h-4" />
+          차트 스타일
+        </button>
+        
+        <button
+          onClick={() => setShowPlotPanel(!showPlotPanel)}
+          className="flex items-center gap-2 px-3 py-2 bg-white border rounded-md hover:bg-gray-50"
+        >
+          <Shapes className="w-4 h-4" />
+          플롯 스타일
+        </button>
+        
+        <button
+          onClick={() => setShowAxisPanel(!showAxisPanel)}
+          className="flex items-center gap-2 px-3 py-2 bg-white border rounded-md hover:bg-gray-50"
+        >
+          <Move3D className="w-4 h-4" />
+          축 범위
+        </button>
+        
+        <button
+          onClick={exportChart}
+          className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+        >
+          <Download className="w-4 h-4" />
+          이미지 저장
+        </button>
       </div>
 
-      {/* 타입 필터 패널 (추세선 스타일 설정 제거) */}
-      {showTypePanel && selectedColumns.useTypeColumn && selectedColumns.selectedTypeColumn && (
-        <div className="mb-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="text-sm font-medium text-gray-700 flex items-center">
-              <Eye className="h-4 w-4 mr-1" />
-              데이터 타입 표시 설정
-            </h4>
+      {/* 타입별 데이터 표시 설정 */}
+      {Object.keys(typeGroups).length > 1 && (
+        <div className="p-4 bg-gray-50 rounded-lg">
+          <div className="flex flex-wrap items-center gap-4 mb-3">
+            <h3 className="font-medium">데이터 타입 표시 설정</h3>
             <button
               onClick={toggleAllTypes}
-              className="text-xs text-purple-600 hover:text-purple-800 transition-colors"
+              className="flex items-center gap-1 px-3 py-1 text-sm bg-white border rounded hover:bg-gray-50"
             >
-              {Object.values(visibleTypes).every(v => v) ? '모두 숨기기' : '모두 표시'}
+              {Object.values(visibleTypes).every(v => v) ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              전체 {Object.values(visibleTypes).every(v => v) ? '숨김' : '표시'}
+            </button>
+            <button
+              onClick={() => setUseVisibleDataRange(!useVisibleDataRange)}
+              className={`flex items-center gap-1 px-3 py-1 text-sm border rounded ${
+                useVisibleDataRange ? 'bg-blue-100 border-blue-300 text-blue-700' : 'bg-white border-gray-300'
+              }`}
+            >
+              {useVisibleDataRange ? <ZoomIn className="w-4 h-4" /> : <ZoomOut className="w-4 h-4" />}
+              {useVisibleDataRange ? '표시 데이터 범위' : '전체 데이터 범위'}
             </button>
           </div>
           
-          {/* 축 범위 조정 버튼들 */}
-          <div className="mb-3 flex items-center gap-2 p-2 bg-white rounded border">
-            <span className="text-xs font-medium text-gray-600">축 범위:</span>
+          {/* 추세선 제어 */}
+          <div className="flex flex-wrap items-center gap-4 mb-3">
+            <h4 className="font-medium text-sm">추세선 표시 설정</h4>
             <button
-              onClick={adjustToVisibleDataRange}
-              disabled={Object.values(visibleTypes).every(v => !v)}
-              className={`px-2 py-1 text-xs rounded flex items-center gap-1 transition-colors ${
-                useVisibleDataRange
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:bg-gray-100 disabled:text-gray-400'
+              onClick={() => setShowOverallTrend(!showOverallTrend)}
+              className={`flex items-center gap-1 px-3 py-1 text-sm border rounded ${
+                showOverallTrend ? 'bg-red-100 border-red-300 text-red-700' : 'bg-white border-gray-300'
               }`}
             >
-              <ZoomIn size={12} />
-              표시 데이터 범위로 확대
+              <TrendingUp className="w-4 h-4" />
+              전체 추세선
             </button>
             <button
-              onClick={resetToFullDataRange}
-              className={`px-2 py-1 text-xs rounded flex items-center gap-1 transition-colors ${
-                !useVisibleDataRange
-                  ? 'bg-gray-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              onClick={toggleAllTypeTrendlines}
+              className={`flex items-center gap-1 px-3 py-1 text-sm border rounded ${
+                showAllTypeTrends ? 'bg-green-100 border-green-300 text-green-700' : 'bg-white border-gray-300'
               }`}
             >
-              <ZoomOut size={12} />
-              전체 데이터 범위로 복원
-            </button>
-          </div>
-
-          {/* 추세선 제어 버튼들 */}
-          <div className="mb-3 flex items-center gap-2 p-2 bg-white rounded border">
-            <span className="text-xs font-medium text-gray-600">추세선:</span>
-            <button
-              onClick={() => setShowOverallRegression(!showOverallRegression)}
-              className={`px-2 py-1 text-xs rounded flex items-center gap-1 transition-colors ${
-                showOverallRegression
-                  ? 'bg-red-600 text-white'
-                  : 'bg-red-100 text-red-700 hover:bg-red-200'
-              }`}
-            >
-              <TrendingUp size={12} />
-              전체 추세선 {showOverallRegression ? '끄기' : '보기'}
-            </button>
-            <button
-              onClick={() => setShowTypeRegressions(!showTypeRegressions)}
-              className={`px-2 py-1 text-xs rounded flex items-center gap-1 transition-colors ${
-                showTypeRegressions
-                  ? 'bg-green-600 text-white'
-                  : 'bg-green-100 text-green-700 hover:bg-green-200'
-              }`}
-            >
-              <TrendingDown size={12} />
-              타입별 추세선 {showTypeRegressions ? '모두끄기' : '모두보기'}
+              <TrendingDown className="w-4 h-4" />
+              타입별 추세선 {showAllTypeTrends ? '모두 끄기' : '모두 보기'}
             </button>
           </div>
           
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-            {Object.entries(visibleTypes).map(([type, isVisible]) => {
-              const color = fixedTypeColors[type] || '#8884d8'
-              const count = chartData.filter(d => d.type === type).length
-              
-              return (
-                <label
-                  key={type}
-                  className="flex items-center gap-2 text-sm cursor-pointer hover:bg-purple-100 p-2 rounded transition-colors"
-                >
+            {Object.keys(typeGroups).map(type => (
+              <div key={type} className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
                   <input
                     type="checkbox"
-                    checked={isVisible}
-                    onChange={() => toggleType(type)}
-                    className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                    checked={visibleTypes[type] !== false}
+                    onChange={() => toggleTypeVisibility(type)}
+                    className="rounded"
                   />
                   <div
-                    className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: color }}
+                    className="w-3 h-3 rounded border"
+                    style={{ backgroundColor: fixedColorMap[type] }}
                   />
-                  <span className="text-gray-700 flex-1">
-                    {type} ({count})
-                  </span>
-                  {isVisible ? (
-                    <Eye size={12} className="text-green-500" />
-                  ) : (
-                    <EyeOff size={12} className="text-gray-400" />
-                  )}
-                </label>
-              )
-            })}
+                </div>
+                <span className="text-sm truncate flex-1" title={type}>
+                  {type} ({typeGroups[type].length})
+                </span>
+                <button
+                  onClick={() => toggleTypeTrendline(type)}
+                  className={`p-1 rounded ${
+                    showTypeTrends[type] ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
+                  }`}
+                  title={`${type} 추세선`}
+                >
+                  <TrendingUp className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* 수정: 플롯 스타일 설정 패널 (추세선 스타일 설정 추가) */}
-      {showPlotPanel && (
-        <div className="mb-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
-          <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
-            <Shapes className="h-4 w-4 mr-1" />
-            플롯 스타일 설정
-          </h4>
-          
-          {/* 새로 추가: 전체 추세선 스타일 설정 */}
-          {showOverallRegression && (
-            <div className="mb-4 p-3 bg-white rounded-lg border">
-              <h5 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
-                <TrendingUp className="h-4 w-4 mr-1" />
-                전체 추세선 스타일
-              </h5>
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">색상</label>
-                  <input
-                    type="color"
-                    value={overallRegressionStyle.color}
-                    onChange={(e) => setOverallRegressionStyle({
-                      ...overallRegressionStyle,
-                      color: e.target.value
-                    })}
-                    className="w-full h-8 border border-gray-300 rounded cursor-pointer"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">두께: {overallRegressionStyle.strokeWidth}px</label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="5"
-                    value={overallRegressionStyle.strokeWidth}
-                    onChange={(e) => setOverallRegressionStyle({
-                      ...overallRegressionStyle,
-                      strokeWidth: parseInt(e.target.value)
-                    })}
-                    className="w-full"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">투명도: {Math.round(overallRegressionStyle.opacity * 100)}%</label>
-                  <input
-                    type="range"
-                    min="0.1"
-                    max="1"
-                    step="0.1"
-                    value={overallRegressionStyle.opacity}
-                    onChange={(e) => setOverallRegressionStyle({
-                      ...overallRegressionStyle,
-                      opacity: parseFloat(e.target.value)
-                    })}
-                    className="w-full"
-                  />
-                </div>
-              </div>
-              <div className="mt-2 text-xs text-gray-500">
-                💡 타입별 추세선은 각 그룹의 색상을 따라갑니다
-              </div>
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* 마커 모양 */}
+      {/* 스타일 패널들 */}
+      {showStylePanel && (
+        <div className="p-4 bg-white border rounded-lg">
+          <h3 className="font-medium mb-3">차트 스타일 설정</h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                마커 모양
-              </label>
+              <label className="block text-sm font-medium mb-1">숫자 형식</label>
               <select
-                value={plotOptions.shape}
-                onChange={(e) => setPlotOptions({
-                  ...plotOptions,
-                  shape: e.target.value as PlotStyleOptions['shape']
-                })}
-                className="w-full p-2 text-sm border border-gray-300 rounded focus:ring-purple-500 focus:border-purple-500"
+                value={styleOptions.numberFormat}
+                onChange={(e) => setStyleOptions(prev => ({ ...prev, numberFormat: e.target.value as any }))}
+                className="w-full p-2 border rounded-md"
               >
-                <option value="circle">● 동그라미</option>
-                <option value="triangle">▲ 세모</option>
-                <option value="square">■ 네모</option>
-                <option value="diamond">◆ 다이아몬드</option>
+                <option value="normal">일반</option>
+                <option value="scientific">과학적 표기법</option>
+                <option value="engineering">공학적 표기법</option>
               </select>
             </div>
-
-            {/* 마커 크기 */}
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                마커 크기: {plotOptions.size}
-              </label>
+              <label className="block text-sm font-medium mb-1">폰트</label>
+              <select
+                value={styleOptions.fontFamily}
+                onChange={(e) => setStyleOptions(prev => ({ ...prev, fontFamily: e.target.value }))}
+                className="w-full p-2 border rounded-md"
+              >
+                <option value="Arial">Arial</option>
+                <option value="Times New Roman">Times New Roman</option>
+                <option value="Helvetica">Helvetica</option>
+                <option value="Georgia">Georgia</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">축 제목 크기</label>
+              <input
+                type="number"
+                value={styleOptions.axisTitleSize}
+                onChange={(e) => setStyleOptions(prev => ({ ...prev, axisTitleSize: parseInt(e.target.value) }))}
+                className="w-full p-2 border rounded-md"
+                min="8"
+                max="24"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">축 숫자 크기</label>
+              <input
+                type="number"
+                value={styleOptions.axisNumberSize}
+                onChange={(e) => setStyleOptions(prev => ({ ...prev, axisNumberSize: parseInt(e.target.value) }))}
+                className="w-full p-2 border rounded-md"
+                min="6"
+                max="20"
+              />
+            </div>
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                checked={styleOptions.axisTitleBold}
+                onChange={(e) => setStyleOptions(prev => ({ ...prev, axisTitleBold: e.target.checked }))}
+                className="mr-2"
+              />
+              <label className="text-sm font-medium">축 제목 굵게</label>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPlotPanel && (
+        <div className="p-4 bg-white border rounded-lg">
+          <h3 className="font-medium mb-3">플롯 스타일 설정</h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">마커 크기</label>
               <input
                 type="range"
                 min="20"
-                max="120"
+                max="200"
                 value={plotOptions.size}
-                onChange={(e) => setPlotOptions({
-                  ...plotOptions,
-                  size: parseInt(e.target.value)
-                })}
+                onChange={(e) => setPlotOptions(prev => ({ ...prev, size: parseInt(e.target.value) }))}
                 className="w-full"
               />
+              <span className="text-sm text-gray-500">{plotOptions.size}</span>
             </div>
-
-            {/* 투명도 */}
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                투명도: {Math.round(plotOptions.opacity * 100)}%
-              </label>
+              <label className="block text-sm font-medium mb-1">마커 모양</label>
+              <select
+                value={plotOptions.shape}
+                onChange={(e) => setPlotOptions(prev => ({ ...prev, shape: e.target.value as any }))}
+                className="w-full p-2 border rounded-md"
+              >
+                <option value="circle">원</option>
+                <option value="square">사각형</option>
+                <option value="triangle">삼각형</option>
+                <option value="diamond">다이아몬드</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">마커 불투명도</label>
               <input
                 type="range"
                 min="0.1"
                 max="1"
                 step="0.1"
                 value={plotOptions.opacity}
-                onChange={(e) => setPlotOptions({
-                  ...plotOptions,
-                  opacity: parseFloat(e.target.value)
-                })}
+                onChange={(e) => setPlotOptions(prev => ({ ...prev, opacity: parseFloat(e.target.value) }))}
                 className="w-full"
               />
+              <span className="text-sm text-gray-500">{plotOptions.opacity}</span>
             </div>
-
-            {/* 테두리 두께 */}
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                테두리: {plotOptions.strokeWidth}px
-              </label>
+              <label className="block text-sm font-medium mb-1">테두리 두께</label>
               <input
                 type="range"
                 min="0"
                 max="5"
                 value={plotOptions.strokeWidth}
-                onChange={(e) => setPlotOptions({
-                  ...plotOptions,
-                  strokeWidth: parseInt(e.target.value)
-                })}
+                onChange={(e) => setPlotOptions(prev => ({ ...prev, strokeWidth: parseInt(e.target.value) }))}
                 className="w-full"
               />
+              <span className="text-sm text-gray-500">{plotOptions.strokeWidth}</span>
             </div>
-          </div>
-
-          {/* 테두리 색상 */}
-          <div className="mt-4">
-            <label className="block text-xs font-medium text-gray-600 mb-2">
-              테두리 색상 (모든 마커 공통)
-            </label>
-            <div className="flex items-center gap-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">테두리 색상</label>
               <input
                 type="color"
                 value={plotOptions.strokeColor}
-                onChange={(e) => setPlotOptions({
-                  ...plotOptions,
-                  strokeColor: e.target.value
-                })}
-                className="w-12 h-8 border border-gray-300 rounded cursor-pointer"
-                title="테두리 색상 선택"
+                onChange={(e) => setPlotOptions(prev => ({ ...prev, strokeColor: e.target.value }))}
+                className="w-full h-10 border rounded-md"
               />
-              <span className="text-sm text-gray-700">
-                {plotOptions.strokeColor}
-              </span>
-              <button
-                onClick={() => setPlotOptions({
-                  ...plotOptions,
-                  strokeColor: '#000000'
-                })}
-                className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded transition-colors"
-              >
-                검정으로 초기화
-              </button>
             </div>
-          </div>
-
-          {/* 색상 팔레트 */}
-          <div className="mt-4">
-            <label className="flex items-center mb-2">
+            <div>
+              <label className="block text-sm font-medium mb-1">배경색</label>
+              <input
+                type="color"
+                value={plotOptions.backgroundColor}
+                onChange={(e) => setPlotOptions(prev => ({ ...prev, backgroundColor: e.target.value }))}
+                className="w-full h-10 border rounded-md"
+              />
+            </div>
+            <div className="flex items-center">
               <input
                 type="checkbox"
-                checked={plotOptions.useCustomColors}
-                onChange={(e) => setPlotOptions({
-                  ...plotOptions,
-                  useCustomColors: e.target.checked
-                })}
-                className="h-4 w-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                checked={plotOptions.showGridlines}
+                onChange={(e) => setPlotOptions(prev => ({ ...prev, showGridlines: e.target.checked }))}
+                className="mr-2"
               />
-              <span className="ml-2 text-xs text-gray-700">사용자 정의 색상 사용</span>
-            </label>
+              <label className="text-sm font-medium">격자 표시</label>
+            </div>
             
-            {plotOptions.useCustomColors && (
-              <div>
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {plotOptions.customColors.map((color, index) => (
-                    <input
-                      key={index}
-                      type="color"
-                      value={color}
-                      onChange={(e) => {
-                        const newColors = [...plotOptions.customColors]
-                        newColors[index] = e.target.value
-                        setPlotOptions({
-                          ...plotOptions,
-                          customColors: newColors
-                        })
-                      }}
-                      className="w-8 h-8 border border-gray-300 rounded cursor-pointer"
-                      title={`색상 ${index + 1}`}
-                    />
-                  ))}
+            {/* 추세선 스타일 설정 */}
+            <div className="col-span-full border-t pt-4 mt-4">
+              <h4 className="font-medium mb-3">추세선 스타일 설정</h4>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">전체 추세선 색상</label>
+                  <input
+                    type="color"
+                    value={trendlineStyle.color}
+                    onChange={(e) => setTrendlineStyle(prev => ({ ...prev, color: e.target.value }))}
+                    className="w-full h-10 border rounded-md"
+                  />
                 </div>
-                
-                {/* 색상 미리보기 범례 */}
-                <div className="bg-white p-3 rounded border border-gray-200">
-                  <p className="text-xs font-medium text-gray-600 mb-2">색상 적용 미리보기:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {typeGroups.map((group, index) => (
-                      <div key={group.type} className="flex items-center text-xs">
-                        <div 
-                          className="w-3 h-3 mr-1 border"
-                          style={{ 
-                            backgroundColor: group.color,
-                            opacity: plotOptions.opacity,
-                            borderColor: plotOptions.strokeColor,
-                            borderWidth: Math.max(1, plotOptions.strokeWidth)
-                          }}
-                        />
-                        <span className="text-gray-700">
-                          {group.type === 'default' ? '전체 데이터' : group.type}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">전체 추세선 두께</label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="5"
+                    value={trendlineStyle.strokeWidth}
+                    onChange={(e) => setTrendlineStyle(prev => ({ ...prev, strokeWidth: parseInt(e.target.value) }))}
+                    className="w-full"
+                  />
+                  <span className="text-sm text-gray-500">{trendlineStyle.strokeWidth}</span>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">전체 추세선 불투명도</label>
+                  <input
+                    type="range"
+                    min="0.1"
+                    max="1"
+                    step="0.1"
+                    value={trendlineStyle.opacity}
+                    onChange={(e) => setTrendlineStyle(prev => ({ ...prev, opacity: parseFloat(e.target.value) }))}
+                    className="w-full"
+                  />
+                  <span className="text-sm text-gray-500">{trendlineStyle.opacity}</span>
                 </div>
               </div>
-            )}
+            </div>
           </div>
         </div>
       )}
 
-      {/* 축 범위 설정 패널 */}
       {showAxisPanel && (
-        <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-          <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
-            <Move3D className="h-4 w-4 mr-1" />
-            축 범위 설정
-          </h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* X축 범위 */}
+        <div className="p-4 bg-white border rounded-lg">
+          <h3 className="font-medium mb-3">축 범위 설정</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
-              <h5 className="text-sm font-medium text-gray-600 mb-2">X축 ({selectedColumns.x.label})</h5>
-              <div className="space-y-2">
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    name="xAxisMode"
-                    checked={xAxisRange.auto}
-                    onChange={() => setXAxisRange({...xAxisRange, auto: true})}
-                    className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                  />
-                  <span className="ml-2 text-sm text-gray-700">자동 범위</span>
-                </label>
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    name="xAxisMode"
-                    checked={!xAxisRange.auto}
-                    onChange={() => setXAxisRange({...xAxisRange, auto: false})}
-                    className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                  />
-                  <span className="ml-2 text-sm text-gray-700">수동 범위</span>
-                </label>
-                {!xAxisRange.auto && (
-                  <div className="grid grid-cols-2 gap-2 mt-2">
-                    <div>
-                      <label className="block text-xs text-gray-500">최소값</label>
-                      <input
-                        type="number"
-                        value={xAxisRange.min}
-                        onChange={(e) => setXAxisRange({...xAxisRange, min: parseFloat(e.target.value)})}
-                        className="w-full p-2 text-sm border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500"
-                        step="any"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500">최대값</label>
-                      <input
-                        type="number"
-                        value={xAxisRange.max}
-                        onChange={(e) => setXAxisRange({...xAxisRange, max: parseFloat(e.target.value)})}
-                        className="w-full p-2 text-sm border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500"
-                        step="any"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Y축 범위 */}
-            <div>
-              <h5 className="text-sm font-medium text-gray-600 mb-2">Y축 ({selectedColumns.y.label})</h5>
-              <div className="space-y-2">
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    name="yAxisMode"
-                    checked={yAxisRange.auto}
-                    onChange={() => setYAxisRange({...yAxisRange, auto: true})}
-                    className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                  />
-                  <span className="ml-2 text-sm text-gray-700">자동 범위</span>
-                </label>
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    name="yAxisMode"
-                    checked={!yAxisRange.auto}
-                    onChange={() => setYAxisRange({...yAxisRange, auto: false})}
-                    className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                  />
-                  <span className="ml-2 text-sm text-gray-700">수동 범위</span>
-                </label>
-                {!yAxisRange.auto && (
-                  <div className="grid grid-cols-2 gap-2 mt-2">
-                    <div>
-                      <label className="block text-xs text-gray-500">최소값</label>
-                      <input
-                        type="number"
-                        value={yAxisRange.min}
-                        onChange={(e) => setYAxisRange({...yAxisRange, min: parseFloat(e.target.value)})}
-                        className="w-full p-2 text-sm border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500"
-                        step="any"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500">최대값</label>
-                      <input
-                        type="number"
-                        value={yAxisRange.max}
-                        onChange={(e) => setYAxisRange({...yAxisRange, max: parseFloat(e.target.value)})}
-                        className="w-full p-2 text-sm border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500"
-                        step="any"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 스타일 설정 패널 */}
-      {showStylePanel && (
-        <div className="mb-4 p-4 bg-gray-50 rounded-lg border">
-          <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
-            <Settings className="h-4 w-4 mr-1" />
-            차트 스타일 설정
-          </h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* 숫자 표기법 */}
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                숫자 표기법
-              </label>
-              <select
-                value={styleOptions.numberFormat}
-                onChange={(e) => setStyleOptions({
-                  ...styleOptions,
-                  numberFormat: e.target.value as ChartStyleOptions['numberFormat']
-                })}
-                className="w-full p-2 text-sm border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="normal">일반 (123.45)</option>
-                <option value="comma">쉼표 (1,234.56)</option>
-                <option value="scientific">지수 (1.23e+2)</option>
-              </select>
-            </div>
-
-            {/* 폰트 */}
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                글씨체
-              </label>
-              <select
-                value={styleOptions.fontFamily}
-                onChange={(e) => setStyleOptions({
-                  ...styleOptions,
-                  fontFamily: e.target.value as ChartStyleOptions['fontFamily']
-                })}
-                className="w-full p-2 text-sm border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="Arial">Arial</option>
-                <option value="Helvetica">Helvetica</option>
-                <option value="Times New Roman">Times New Roman</option>
-                <option value="Georgia">Georgia</option>
-              </select>
-            </div>
-
-            {/* 축 제목 굵게 */}
-            <div>
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={styleOptions.axisTitleBold}
-                  onChange={(e) => setStyleOptions({
-                    ...styleOptions,
-                    axisTitleBold: e.target.checked
-                  })}
-                  className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                />
-                <span className="ml-2 text-xs text-gray-700">축 제목 굵게</span>
-              </label>
-            </div>
-
-            {/* 축 제목 크기 */}
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                축 제목 크기: {styleOptions.axisTitleSize}px
-              </label>
+              <label className="block text-sm font-medium mb-1">X축 최솟값</label>
               <input
-                type="range"
-                min="10"
-                max="20"
-                value={styleOptions.axisTitleSize}
-                onChange={(e) => setStyleOptions({
-                  ...styleOptions,
-                  axisTitleSize: parseInt(e.target.value)
-                })}
-                className="w-full"
+                type="number"
+                value={axisRange.xMin === 'auto' ? '' : axisRange.xMin}
+                onChange={(e) => setAxisRange(prev => ({ ...prev, xMin: e.target.value === '' ? 'auto' : parseFloat(e.target.value) }))}
+                placeholder="자동"
+                className="w-full p-2 border rounded-md"
               />
             </div>
-
-            {/* 축 숫자 크기 */}
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                축 숫자 크기: {styleOptions.axisNumberSize}px
-              </label>
+              <label className="block text-sm font-medium mb-1">X축 최댓값</label>
               <input
-                type="range"
-                min="8"
-                max="16"
-                value={styleOptions.axisNumberSize}
-                onChange={(e) => setStyleOptions({
-                  ...styleOptions,
-                  axisNumberSize: parseInt(e.target.value)
-                })}
-                className="w-full"
+                type="number"
+                value={axisRange.xMax === 'auto' ? '' : axisRange.xMax}
+                onChange={(e) => setAxisRange(prev => ({ ...prev, xMax: e.target.value === '' ? 'auto' : parseFloat(e.target.value) }))}
+                placeholder="자동"
+                className="w-full p-2 border rounded-md"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Y축 최솟값</label>
+              <input
+                type="number"
+                value={axisRange.yMin === 'auto' ? '' : axisRange.yMin}
+                onChange={(e) => setAxisRange(prev => ({ ...prev, yMin: e.target.value === '' ? 'auto' : parseFloat(e.target.value) }))}
+                placeholder="자동"
+                className="w-full p-2 border rounded-md"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Y축 최댓값</label>
+              <input
+                type="number"
+                value={axisRange.yMax === 'auto' ? '' : axisRange.yMax}
+                onChange={(e) => setAxisRange(prev => ({ ...prev, yMax: e.target.value === '' ? 'auto' : parseFloat(e.target.value) }))}
+                placeholder="자동"
+                className="w-full p-2 border rounded-md"
               />
             </div>
           </div>
         </div>
       )}
 
-      {/* 파일명 설정 대화상자 */}
-      {showExportDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-96 max-w-full mx-4">
-            <h3 className="text-lg font-medium text-gray-800 mb-4">
-              파일 내보내기 ({exportFormat.toUpperCase()})
-            </h3>
+      {/* 차트 */}
+      <div ref={chartRef} className="w-full h-96 p-4" style={{ backgroundColor: plotOptions.backgroundColor }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <ScatterChart margin={{ top: 20, right: 30, bottom: 60, left: 60 }}>
+            {plotOptions.showGridlines && <CartesianGrid strokeDasharray="3 3" />}
             
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  파일명
-                </label>
-                <input
-                  type="text"
-                  value={customFileName}
-                  onChange={(e) => setCustomFileName(e.target.value)}
-                  className="w-full p-3 border border-gray-300 rounded-md focus:ring-green-500 focus:border-green-500"
-                  placeholder="파일명을 입력하세요"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  확장자(.{exportFormat})는 자동으로 추가됩니다.
-                </p>
-              </div>
+            <XAxis
+              type="number"
+              dataKey="x"
+              domain={[
+                axisRange.xMin === 'auto' ? currentRange.xMin : axisRange.xMin,
+                axisRange.xMax === 'auto' ? currentRange.xMax : axisRange.xMax
+              ]}
+              tickFormatter={formatAxisLabel}
+              tick={{ 
+                fontSize: styleOptions.axisNumberSize,
+                fontFamily: styleOptions.fontFamily
+              }}
+              label={{
+                value: getAxisTitle(selectedColumns.x!),
+                position: 'insideBottom',
+                offset: -40,
+                style: {
+                  textAnchor: 'middle',
+                  fontSize: styleOptions.axisTitleSize,
+                  fontFamily: styleOptions.fontFamily,
+                  fontWeight: styleOptions.axisTitleBold ? 'bold' : 'normal'
+                }
+              }}
+            />
+            
+            <YAxis
+              type="number"
+              dataKey="y"
+              domain={[
+                axisRange.yMin === 'auto' ? currentRange.yMin : axisRange.yMin,
+                axisRange.yMax === 'auto' ? currentRange.yMax : axisRange.yMax
+              ]}
+              tickFormatter={formatAxisLabel}
+              tick={{ 
+                fontSize: styleOptions.axisNumberSize,
+                fontFamily: styleOptions.fontFamily
+              }}
+              label={{
+                value: getAxisTitle(selectedColumns.y!),
+                angle: -90,
+                position: 'insideLeft',
+                style: {
+                  textAnchor: 'middle',
+                  fontSize: styleOptions.axisTitleSize,
+                  fontFamily: styleOptions.fontFamily,
+                  fontWeight: styleOptions.axisTitleBold ? 'bold' : 'normal'
+                }
+              }}
+            />
+            
+            <Tooltip
+              formatter={(value: any, name: string) => [formatAxisLabel(value), name]}
+              labelFormatter={() => ''}
+              contentStyle={{
+                backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                border: '1px solid #ccc',
+                borderRadius: '4px',
+                fontSize: '12px'
+              }}
+            />
 
-              <div className="bg-gray-50 p-3 rounded">
-                <p className="text-sm text-gray-700 mb-2">
-                  <strong>기본 형식:</strong>
-                </p>
-                <p className="text-xs text-gray-600">
-                  {data.fileName.replace(/\.[^/.]+$/, "")}_X축 vs Y축
-                </p>
-                <button
-                  onClick={() => setCustomFileName(generateDefaultFileName())}
-                  className="mt-2 px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded transition-colors"
-                >
-                  기본 형식으로 복원
-                </button>
-              </div>
-
-              <div className="bg-blue-50 p-3 rounded">
-                <p className="text-sm text-gray-700 mb-1">
-                  <strong>미리보기:</strong>
-                </p>
-                <p className="text-sm text-blue-800 font-mono">
-                  {customFileName}.{exportFormat}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex justify-end space-x-3 mt-6">
-              <button
-                onClick={() => setShowExportDialog(false)}
-                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
-              >
-                취소
-              </button>
-              <button
-                onClick={handleExport}
-                disabled={!customFileName.trim()}
-                className="px-4 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-              >
-                내보내기
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* 1:1 비율 고정 차트 (반응형) */}
-      <div className="flex justify-center" ref={chartRef}>
-        <div 
-          id="chart-container"
-          className="w-full max-w-[600px] aspect-square" 
-          style={chartStyle}
-        >
-          <ResponsiveContainer width="100%" height="100%">
-            <ScatterChart margin={{ top: 20, right: 20, bottom: 80, left: 80 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis 
-                type="number" 
-                dataKey="x" 
-                name={selectedColumns.x.label}
-                domain={xDomain}
-                tickFormatter={formatNumber}
-                tick={axisTickStyle}
-                label={{ 
-                  value: selectedColumns.x.label, 
-                  position: 'insideBottom', 
-                  offset: -5,
-                  style: axisLabelStyle,
-                  textAnchor: 'middle'
-                }}
-              />
-              <YAxis 
-                type="number" 
-                dataKey="y" 
-                name={selectedColumns.y.label}
-                domain={yDomain}
-                tickFormatter={formatNumber}
-                tick={axisTickStyle}
-                label={{ 
-                  value: selectedColumns.y.label, 
-                  angle: -90, 
-                  position: 'insideLeft',
-                  style: { 
-                    ...axisLabelStyle,
-                    textAnchor: 'middle'
-                  }
-                }}
-              />
-              <Tooltip content={<CustomTooltip />} />
+            {/* 데이터 포인트 렌더링 */}
+            {Object.keys(typeGroups).map(type => {
+              if (visibleTypes[type] === false) return null
               
-              {typeGroups.map((group, index) => (
+              return (
                 <Scatter
-                  key={group.type}
-                  name={group.type}
-                  data={group.data}
-                  fill={group.color}
+                  key={type}
+                  name={type}
+                  data={typeGroups[type]}
+                  fill={fixedColorMap[type]}
                   shape={(props: any) => (
-                    <CustomMarker 
-                      {...props} 
+                    <CustomMarker
+                      {...props}
                       shape={plotOptions.shape}
                       size={plotOptions.size}
                       opacity={plotOptions.opacity}
@@ -1510,109 +844,46 @@ export default function ScatterPlot({
                     />
                   )}
                 />
-              ))}
-              
-              {/* 수정: 전체 데이터 회귀선 (더 엄격한 렌더링 조건) */}
-              {regressionLine && showOverallRegression && (
-                <ReferenceLine 
-                  segment={regressionLine}
-                  stroke={overallRegressionStyle.color}
-                  strokeWidth={overallRegressionStyle.strokeWidth}
-                  strokeOpacity={overallRegressionStyle.opacity}
-                  strokeDasharray="5 5"
-                />
-              )}
+              )
+            })}
 
-              {/* 수정: 타입별 회귀선 (더 엄격한 렌더링 조건) */}
-              {showTypeRegressions && typeRegressionLines.length > 0 && typeRegressionLines.map(({ type, line, color }) => (
+            {/* 전체 추세선 */}
+            {showOverallTrend && statistics.slope !== undefined && statistics.intercept !== undefined && 
+             isFinite(statistics.slope) && isFinite(statistics.intercept) && (
+              <ReferenceLine
+                segment={generateTrendlinePoints(statistics.slope, statistics.intercept, currentRange)}
+                stroke={trendlineStyle.color}
+                strokeWidth={trendlineStyle.strokeWidth}
+                strokeOpacity={trendlineStyle.opacity}
+                strokeDasharray="0"
+              />
+            )}
+
+            {/* 타입별 추세선 */}
+            {typeStatistics.map(typeStat => {
+              if (!showTypeTrends[typeStat.type] || visibleTypes[typeStat.type] === false) return null
+              if (typeStat.slope === undefined || typeStat.intercept === undefined) return null
+              if (!isFinite(typeStat.slope) || !isFinite(typeStat.intercept)) return null
+              
+              console.log(`Rendering trendline for ${typeStat.type}:`, {
+                slope: typeStat.slope,
+                intercept: typeStat.intercept,
+                color: fixedColorMap[typeStat.type]
+              })
+              
+              return (
                 <ReferenceLine
-                  key={`type-regression-${type}`}
-                  segment={line}
-                  stroke={color}
+                  key={`trend-${typeStat.type}`}
+                  segment={generateTrendlinePoints(typeStat.slope, typeStat.intercept, currentRange)}
+                  stroke={fixedColorMap[typeStat.type]}
                   strokeWidth={2}
                   strokeOpacity={0.8}
+                  strokeDasharray="5 5"
                 />
-              ))}
-            </ScatterChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-      
-      {/* 범례 */}
-      {selectedColumns.useTypeColumn && selectedColumns.selectedTypeColumn && typeGroups.length > 1 && (
-        <div className="mt-4">
-          <p className="text-sm font-medium text-gray-700 mb-2" style={{ fontFamily: styleOptions.fontFamily }}>
-            범례 ({selectedColumns.selectedTypeColumn}):
-          </p>
-          <div className="flex flex-wrap gap-3">
-            {typeGroups.map((group) => (
-              <div key={group.type} className="flex items-center">
-                <div 
-                  className="w-3 h-3 rounded-full mr-2"
-                  style={{ backgroundColor: group.color }}
-                />
-                <span className="text-sm text-gray-600" style={{ fontFamily: styleOptions.fontFamily }}>
-                  {group.type} ({group.data.length}개)
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      
-      {/* 수정: 통계 정보 및 디버깅 (더 상세한 정보) */}
-      <div className="mt-4 p-3 bg-gray-50 rounded-lg" style={{ fontFamily: styleOptions.fontFamily }}>
-        <p className="text-sm text-gray-700">
-          <strong>표시된 데이터 포인트:</strong> {typeGroups.reduce((sum, group) => sum + group.data.length, 0)}개 
-          (전체 {chartData.length}개 중)
-        </p>
-        <p className="text-sm text-gray-700">
-          <strong>축 범위:</strong> {useVisibleDataRange ? '표시 데이터 기준' : '전체 데이터 기준'} 
-          (X: {xAxisRange.min.toFixed(3)} ~ {xAxisRange.max.toFixed(3)}, Y: {yAxisRange.min.toFixed(3)} ~ {yAxisRange.max.toFixed(3)})
-        </p>
-        <p className="text-sm text-gray-700">
-          <strong>전체 추세선:</strong> {showOverallRegression ? '표시' : '숨김'} 
-          {regressionLine && showOverallRegression && `(기울기: ${statistics.linearSlope?.toFixed(4)})`}
-          {!regressionLine && showOverallRegression && ' (데이터 없음)'}
-        </p>
-        <p className="text-sm text-gray-700">
-          <strong>타입별 추세선:</strong> {showTypeRegressions ? `표시 (${typeRegressionLines.length}개)` : '숨김'} 
-          {showTypeRegressions && typeRegressionLines.length > 0 && `- ${typeRegressionLines.map(l => l.type).join(', ')}`}
-        </p>
-        {selectedColumns.x.type === 'ratio' && (
-          <p className="text-sm text-gray-700">
-            <strong>X축 비율:</strong> {selectedColumns.x.numerator}/{selectedColumns.x.denominator}
-          </p>
-        )}
-        {selectedColumns.y.type === 'ratio' && (
-          <p className="text-sm text-gray-700">
-            <strong>Y축 비율:</strong> {selectedColumns.y.numerator}/{selectedColumns.y.denominator}
-          </p>
-        )}
-        {statistics.pearsonCorr && (
-          <p className="text-sm text-gray-700">
-            <strong>전체 피어슨 상관계수:</strong> {statistics.pearsonCorr.toFixed(4)}
-          </p>
-        )}
-        {statistics.rSquared && (
-          <p className="text-sm text-gray-700">
-            <strong>전체 결정계수 (R²):</strong> {statistics.rSquared.toFixed(4)}
-          </p>
-        )}
-        {regressionLine && statistics.linearSlope && statistics.linearIntercept && (
-          <p className="text-sm text-gray-700">
-            <strong>전체 회귀식:</strong> y = {statistics.linearSlope.toFixed(4)}x + {statistics.linearIntercept.toFixed(4)}
-          </p>
-        )}
-        {typeStatistics && typeStatistics.length > 0 && (
-          <p className="text-sm text-gray-700">
-            <strong>타입별 분석:</strong> {typeStatistics.length}개 그룹 
-            (회귀선 가능: {typeStatistics.filter(s => s.linearSlope && s.linearIntercept).length}개)
-          </p>
-        )}
-        <p className="text-xs text-gray-500 mt-2">
-          💡 차트 비율: 1:1 고정 (600×600px) | 내보내기: PNG, SVG 지원 | 타입별 필터링 및 통계 분석 지원
-        </p>
+              )
+            })}
+          </ScatterChart>
+        </ResponsiveContainer>
       </div>
     </div>
   )
