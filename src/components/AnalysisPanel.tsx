@@ -5,7 +5,7 @@ import { GeochemData, StatisticalResult, ColumnSelection } from '@/types/geochem
 import { calculateStatistics } from '@/lib/statistics'
 import ScatterPlot from './ScatterPlot'
 import PCAResultsTable from './PCAResultsTable'
-import { Activity, TrendingUp, BarChart } from 'lucide-react'
+import { Activity, TrendingUp, BarChart, Users, Target } from 'lucide-react'
 import { generatePCAInterpretation, PCAInterpretationRequest, PCAInterpretation } from '@/lib/ai-recommendations'
 
 interface AnalysisPanelProps {
@@ -13,9 +13,25 @@ interface AnalysisPanelProps {
   selectedColumns: ColumnSelection
 }
 
+// 타입별 통계 결과 인터페이스
+interface TypeStatisticsResult {
+  type: string
+  count: number
+  pearsonCorr?: number
+  spearmanCorr?: number
+  pearsonP?: number
+  spearmanP?: number
+  rSquared?: number
+  linearSlope?: number
+  linearIntercept?: number
+  pValue?: number
+}
+
 export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelProps) {
   const [statistics, setStatistics] = useState<StatisticalResult | null>(null)
+  const [typeStatistics, setTypeStatistics] = useState<TypeStatisticsResult[]>([]) // 새로 추가
   const [loading, setLoading] = useState(false)
+  const [showTypeAnalysis, setShowTypeAnalysis] = useState(false) // 새로 추가
   
   // PCA 해설 관련 상태
   const [pcaInterpretation, setPcaInterpretation] = useState<PCAInterpretation | null>(null)
@@ -40,11 +56,108 @@ export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelPr
     }
   }
 
+  // 새로 추가: 타입별 축 데이터 계산 함수
+  const calculateAxisDataWithType = (axisConfig: NonNullable<ColumnSelection['x']>) => {
+    return data.data
+      .map((row, index) => {
+        let value: number
+        
+        if (axisConfig.type === 'single') {
+          value = parseFloat(row[axisConfig.numerator])
+        } else {
+          const numerator = parseFloat(row[axisConfig.numerator])
+          const denominator = parseFloat(row[axisConfig.denominator!])
+          value = numerator / denominator
+        }
+
+        // 타입 정보 추가
+        const type = selectedColumns.useTypeColumn && selectedColumns.selectedTypeColumn 
+          ? row[selectedColumns.selectedTypeColumn] 
+          : 'default'
+
+        return {
+          value,
+          type,
+          index
+        }
+      })
+      .filter(item => !isNaN(item.value) && isFinite(item.value))
+  }
+
+  // 새로 추가: 타입별 통계 분석 함수
+  const performTypeAnalysis = async () => {
+    if (!selectedColumns.x || !selectedColumns.y || !selectedColumns.useTypeColumn || !selectedColumns.selectedTypeColumn) {
+      setTypeStatistics([])
+      return
+    }
+
+    try {
+      const xDataWithType = calculateAxisDataWithType(selectedColumns.x)
+      const yDataWithType = calculateAxisDataWithType(selectedColumns.y)
+
+      // 타입별 데이터 그룹화
+      const typeGroups: { [key: string]: { x: number[], y: number[] } } = {}
+      
+      xDataWithType.forEach((xItem, index) => {
+        const yItem = yDataWithType[index]
+        if (xItem.type === yItem.type) {
+          if (!typeGroups[xItem.type]) {
+            typeGroups[xItem.type] = { x: [], y: [] }
+          }
+          typeGroups[xItem.type].x.push(xItem.value)
+          typeGroups[xItem.type].y.push(yItem.value)
+        }
+      })
+
+      // 각 타입별로 통계 계산
+      const results: TypeStatisticsResult[] = []
+      
+      for (const [type, { x, y }] of Object.entries(typeGroups)) {
+        if (x.length >= 3 && y.length >= 3) { // 최소 3개 이상의 데이터 포인트 필요
+          try {
+            const typeStats = calculateStatistics(x, y, ['pearson', 'spearman'])
+            results.push({
+              type,
+              count: x.length,
+              pearsonCorr: typeStats.pearsonCorr,
+              spearmanCorr: typeStats.spearmanCorr,
+              pearsonP: typeStats.pearsonP,
+              spearmanP: typeStats.spearmanP,
+              rSquared: typeStats.rSquared,
+              linearSlope: typeStats.linearSlope,
+              linearIntercept: typeStats.linearIntercept,
+              pValue: typeStats.pearsonP
+            })
+          } catch (error) {
+            console.error(`Error calculating statistics for type ${type}:`, error)
+            // 에러가 발생한 타입은 기본 정보만 포함
+            results.push({
+              type,
+              count: x.length
+            })
+          }
+        } else {
+          // 데이터가 부족한 타입은 카운트만 포함
+          results.push({
+            type,
+            count: x.length
+          })
+        }
+      }
+
+      setTypeStatistics(results)
+    } catch (error) {
+      console.error('Type analysis failed:', error)
+      setTypeStatistics([])
+    }
+  }
+
   useEffect(() => {
     if (selectedColumns.x && selectedColumns.y && data) {
       performAnalysis()
+      performTypeAnalysis() // 새로 추가: 타입별 분석도 함께 실행
     }
-  }, [selectedColumns.x, selectedColumns.y, data])
+  }, [selectedColumns.x, selectedColumns.y, selectedColumns.useTypeColumn, selectedColumns.selectedTypeColumn, data])
 
   const performAnalysis = async () => {
     if (!selectedColumns.x || !selectedColumns.y) return
@@ -87,7 +200,7 @@ export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelPr
     return 'NS (유의하지 않음)'
   }
 
-  // PCA 해설 생성 함수
+  // PCA 해설 생성 함수 (기존과 동일)
   const generatePCAInterpretationFromResult = async () => {
     if (!data.pcaResult) return
     
@@ -108,7 +221,7 @@ export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelPr
         clusteringResult: {
           clusters: data.pcaResult.clusters,
           optimalK: Math.max(...data.pcaResult.clusters) + 1,
-          silhouetteScore: 0.5, // TODO: 실제 실루엣 점수 계산
+          silhouetteScore: 0.5,
         },
         statisticalTests: {
           bartlett: {
@@ -148,10 +261,7 @@ export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelPr
         }
       }
       
-      // 사용자에게 친화적인 에러 메시지 표시
       alert(`❌ ${errorMessage}\n\n💡 팁: 잠시 후 다시 시도하거나 페이지를 새로고침해보세요.`)
-      
-      // 에러 발생 시 모달을 닫지 않고 재시도 가능하도록 함
       setShowInterpretation(false)
       
     } finally {
@@ -198,7 +308,8 @@ export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelPr
                   hasPcaResult: !!data.pcaResult,
                   isPCAMode,
                   clusterDataLength: clusterData.length,
-                  pcaResultKeys: data.pcaResult ? Object.keys(data.pcaResult) : []
+                  pcaResultKeys: data.pcaResult ? Object.keys(data.pcaResult) : [],
+                  typeStatisticsLength: typeStatistics.length
                 })
                 
                 return (
@@ -208,6 +319,7 @@ export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelPr
                     statistics={statistics}
                     isPCAMode={isPCAMode}
                     clusterData={clusterData}
+                    typeStatistics={typeStatistics} // 새로 추가: 타입별 통계 전달
                   />
                 )
               })()}
@@ -258,11 +370,114 @@ export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelPr
               </div>
             )}
 
-            {/* 통계 결과 */}
+            {/* 새로 추가: 타입별 분석 요약 */}
+            {typeStatistics.length > 1 && (
+              <div className="lg:col-span-2">
+                <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-4 border border-indigo-200">
+                  <div className="flex justify-between items-center mb-3">
+                    <h3 className="text-lg font-medium text-indigo-800 flex items-center">
+                      <Users className="h-5 w-5 mr-2" />
+                      타입별 분석 요약 ({selectedColumns.selectedTypeColumn})
+                    </h3>
+                    <button
+                      onClick={() => setShowTypeAnalysis(!showTypeAnalysis)}
+                      className="px-3 py-1 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+                    >
+                      {showTypeAnalysis ? '간략히 보기' : '상세히 보기'}
+                    </button>
+                  </div>
+                  
+                  {!showTypeAnalysis ? (
+                    // 간략한 요약
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {typeStatistics.map((typeStat) => (
+                        <div key={typeStat.type} className="bg-white p-3 rounded-lg shadow-sm">
+                          <h4 className="font-medium text-gray-700 text-sm mb-1">{typeStat.type}</h4>
+                          <p className="text-xs text-gray-600">{typeStat.count}개 데이터</p>
+                          {typeStat.pearsonCorr && (
+                            <p className="text-sm font-bold text-indigo-600">
+                              r = {formatNumber(typeStat.pearsonCorr, 3)}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    // 상세한 분석
+                    <div className="space-y-4">
+                      {typeStatistics.map((typeStat) => (
+                        <div key={typeStat.type} className="bg-white p-4 rounded-lg shadow-sm">
+                          <h4 className="font-medium text-gray-700 mb-3 flex items-center">
+                            <Target className="h-4 w-4 mr-1" />
+                            {typeStat.type} ({typeStat.count}개 데이터)
+                          </h4>
+                          
+                          {typeStat.pearsonCorr !== undefined ? (
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <div className="bg-blue-50 p-3 rounded">
+                                <h5 className="text-sm font-medium text-blue-800">피어슨 상관계수</h5>
+                                <p className="text-lg font-bold text-blue-600">
+                                  {formatNumber(typeStat.pearsonCorr)}
+                                </p>
+                                <p className="text-xs text-blue-700">
+                                  {getCorrelationStrength(typeStat.pearsonCorr)}
+                                </p>
+                                <p className="text-xs text-blue-700">
+                                  {getSignificanceLevel(typeStat.pearsonP)}
+                                </p>
+                              </div>
+                              
+                              {typeStat.spearmanCorr !== undefined && (
+                                <div className="bg-green-50 p-3 rounded">
+                                  <h5 className="text-sm font-medium text-green-800">스피어만 상관계수</h5>
+                                  <p className="text-lg font-bold text-green-600">
+                                    {formatNumber(typeStat.spearmanCorr)}
+                                  </p>
+                                  <p className="text-xs text-green-700">
+                                    {getCorrelationStrength(typeStat.spearmanCorr)}
+                                  </p>
+                                </div>
+                              )}
+                              
+                              {typeStat.rSquared !== undefined && (
+                                <div className="bg-purple-50 p-3 rounded">
+                                  <h5 className="text-sm font-medium text-purple-800">결정계수 (R²)</h5>
+                                  <p className="text-lg font-bold text-purple-600">
+                                    {formatNumber(typeStat.rSquared)}
+                                  </p>
+                                  <p className="text-xs text-purple-700">
+                                    설명력: {formatNumber((typeStat.rSquared || 0) * 100, 1)}%
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="text-gray-500 text-sm">
+                              데이터가 부족하여 통계 분석을 수행할 수 없습니다 (최소 3개 필요)
+                            </div>
+                          )}
+                          
+                          {typeStat.linearSlope !== undefined && typeStat.linearIntercept !== undefined && (
+                            <div className="mt-3 bg-orange-50 p-3 rounded">
+                              <h5 className="text-sm font-medium text-orange-800">회귀 방정식</h5>
+                              <p className="text-sm font-mono text-orange-600">
+                                y = {formatNumber(typeStat.linearSlope)}x + {formatNumber(typeStat.linearIntercept)}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* 전체 통계 결과 */}
             <div>
               <h3 className="text-lg font-medium text-gray-800 mb-4 flex items-center">
                 <TrendingUp className="h-5 w-5 mr-2" />
-                상관관계 통계
+                전체 상관관계 통계
               </h3>
               <div className="space-y-4">
                 {statistics.pearsonCorr !== undefined && (
@@ -301,7 +516,7 @@ export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelPr
             <div>
               <h3 className="text-lg font-medium text-gray-800 mb-4 flex items-center">
                 <BarChart className="h-5 w-5 mr-2" />
-                선형 회귀 분석
+                전체 선형 회귀 분석
               </h3>
               <div className="space-y-4">
                 {statistics.rSquared !== undefined && (
@@ -337,7 +552,7 @@ export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelPr
         )}
       </div>
 
-      {/* PCA 해설 모달 */}
+      {/* PCA 해설 모달 (기존과 동일) */}
       {showInterpretation && pcaInterpretation && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -418,4 +633,4 @@ export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelPr
       )}
     </div>
   )
-} 
+}
