@@ -216,7 +216,8 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
         ...row
       }
     }).filter(item => !isNaN(item.x) && !isNaN(item.y) && isFinite(item.x) && isFinite(item.y))
-  }, [data, selectedColumns, isPCAMode, clusterData])ㅍ
+  }, [data, selectedColumns, isPCAMode, clusterData])
+  
   // 타입별 데이터 그룹화 (고정된 색상 매핑)
   const { typeGroups, fixedColorMap } = useMemo(() => {
     const groups: Record<string, typeof chartData> = {}
