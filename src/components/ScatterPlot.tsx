@@ -132,18 +132,27 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
   const [showPlotPanel, setShowPlotPanel] = useState(false)
   const [showAxisPanel, setShowAxisPanel] = useState(false)
 
+  // 타입 안전한 type 필드 접근
+  const getTypeField = () => {
+    const cols = selectedColumns as any
+    return cols.type || null
+  }
+
   // 디버깅 로그
   console.log('ScatterPlot 데이터:', {
     statistics,
     typeStatistics,
     hasLinearRegression: !!(statistics as any)?.linearRegression,
     directSlope: (statistics as any)?.slope,
-    directIntercept: (statistics as any)?.intercept
+    directIntercept: (statistics as any)?.intercept,
+    typeField: getTypeField()
   })
 
   // 차트 데이터 준비
   const chartData = useMemo(() => {
     if (!selectedColumns.x || !selectedColumns.y) return []
+
+    const typeField = getTypeField()
 
     return data.data.map((row, index) => {
       let xValue: number
@@ -164,11 +173,11 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
         yValue = numerator / denominator
       }
 
-      let type = 'Unknown'
+      let type = 'All Data'
       if (isPCAMode && clusterData.length > index) {
         type = `Cluster ${clusterData[index]}`
-      } else if (selectedColumns.type && row[selectedColumns.type]) {
-        type = row[selectedColumns.type]?.toString().trim() || 'Unknown'
+      } else if (typeField && row[typeField]) {
+        type = row[typeField]?.toString().trim() || 'Unknown'
       }
 
       return {
