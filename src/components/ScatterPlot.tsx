@@ -369,11 +369,9 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
     switch (styleOptions.numberFormat) {
       case 'scientific':
         return value.toExponential(2)
-      case 'engineering':
-        const exp = Math.floor(Math.log10(Math.abs(value)) / 3) * 3
-        const mantissa = value / Math.pow(10, exp)
-        return `${mantissa.toFixed(2)}e${exp}`
-      default:
+      case 'comma':  // ← engineering을 comma로 변경!
+        return value.toLocaleString(undefined, { maximumFractionDigits: 3 })
+      default: // 'normal'
         return value.toFixed(3)
     }
   }
@@ -546,7 +544,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
               >
                 <option value="normal">일반</option>
                 <option value="scientific">과학적 표기법</option>
-                <option value="engineering">공학적 표기법</option>
+                <option value="comma">천 단위 구분</option>  // ← engineering을 comma로 변경!
               </select>
             </div>
             <div>
