@@ -118,7 +118,7 @@ export default function ScatterPlot({
   const [showOverallRegression, setShowOverallRegression] = useState(true)
   const [showTypeRegressions, setShowTypeRegressions] = useState(true)
   
-  // 새로 추가: 전체 추세선 스타일 옵션
+  // 수정: 플롯 스타일로 이동된 전체 추세선 스타일 옵션
   const [overallRegressionStyle, setOverallRegressionStyle] = useState({
     color: '#EF4444',
     strokeWidth: 2,
@@ -336,9 +336,28 @@ export default function ScatterPlot({
     }
   }, [useVisibleDataRange, xAxisRange, fullDataAxisRange])
 
-  // 전체 회귀선 계산
+  // 수정: 전체 회귀선 계산 (더 엄격한 검증)
   const regressionLine = useMemo(() => {
-    if (!statistics.linearSlope || !statistics.linearIntercept) return null
+    console.log('전체 회귀선 계산 시작:', {
+      hasSlope: !!statistics.linearSlope,
+      hasIntercept: !!statistics.linearIntercept,
+      slope: statistics.linearSlope,
+      intercept: statistics.linearIntercept,
+      slopeIsNumber: typeof statistics.linearSlope === 'number',
+      interceptIsNumber: typeof statistics.linearIntercept === 'number',
+      slopeIsFinite: statistics.linearSlope ? isFinite(statistics.linearSlope) : false,
+      interceptIsFinite: statistics.linearIntercept ? isFinite(statistics.linearIntercept) : false
+    })
+
+    if (!statistics.linearSlope || 
+        !statistics.linearIntercept || 
+        typeof statistics.linearSlope !== 'number' || 
+        typeof statistics.linearIntercept !== 'number' ||
+        !isFinite(statistics.linearSlope) || 
+        !isFinite(statistics.linearIntercept)) {
+      console.log('전체 회귀선 계산 실패: 유효하지 않은 slope 또는 intercept')
+      return null
+    }
     
     const xMin = regressionXRange.min
     const xMax = regressionXRange.max
@@ -348,7 +367,7 @@ export default function ScatterPlot({
       { x: xMax, y: statistics.linearSlope * xMax + statistics.linearIntercept }
     ]
     
-    console.log('전체 회귀선 계산:', { 
+    console.log('전체 회귀선 계산 성공:', { 
       slope: statistics.linearSlope, 
       intercept: statistics.linearIntercept,
       xRange: regressionXRange,
@@ -358,12 +377,14 @@ export default function ScatterPlot({
     return line
   }, [statistics, regressionXRange])
 
-  // 개선된 타입별 회귀선 계산
+  // 수정: 타입별 회귀선 계산 (더 엄격한 검증과 디버깅)
   const typeRegressionLines = useMemo(() => {
-    console.log('타입별 회귀선 계산 시작:', {
+    console.log('=== 타입별 회귀선 계산 시작 ===')
+    console.log('입력 데이터:', {
       typeStatisticsLength: typeStatistics.length,
-      visibleTypes: Object.keys(visibleTypes).filter(t => visibleTypes[t]),
-      allTypes: Object.keys(visibleTypes)
+      visibleTypesCount: Object.keys(visibleTypes).filter(t => visibleTypes[t]).length,
+      allVisibleTypes: Object.keys(visibleTypes).filter(t => visibleTypes[t]),
+      regressionXRange
     })
 
     if (!typeStatistics || typeStatistics.length === 0) {
@@ -374,58 +395,71 @@ export default function ScatterPlot({
     const xMin = regressionXRange.min
     const xMax = regressionXRange.max
     
-    // 모든 타입별 통계를 확인
-    typeStatistics.forEach(stat => {
-      console.log(`타입 ${stat.type}:`, {
-        hasSlope: !!stat.linearSlope,
-        hasIntercept: !!stat.linearIntercept,
-        isVisible: visibleTypes[stat.type],
+    // 모든 타입별 통계를 하나씩 검사
+    const validRegressions: Array<{
+      type: string;
+      line: Array<{ x: number; y: number }>;
+      color: string;
+    }> = []
+
+    typeStatistics.forEach((stat, index) => {
+      console.log(`\n--- 타입 ${stat.type} (${index + 1}/${typeStatistics.length}) 검사 ---`)
+      
+      // 1. 기본 값들 검사
+      const hasValidSlope = stat.linearSlope !== undefined && 
+                          stat.linearSlope !== null &&
+                          typeof stat.linearSlope === 'number' && 
+                          !isNaN(stat.linearSlope) && 
+                          isFinite(stat.linearSlope)
+      
+      const hasValidIntercept = stat.linearIntercept !== undefined && 
+                              stat.linearIntercept !== null &&
+                              typeof stat.linearIntercept === 'number' && 
+                              !isNaN(stat.linearIntercept) && 
+                              isFinite(stat.linearIntercept)
+      
+      const isTypeVisible = visibleTypes[stat.type] === true
+      
+      console.log('검사 결과:', {
+        type: stat.type,
         slope: stat.linearSlope,
         intercept: stat.linearIntercept,
-        count: stat.count
+        hasValidSlope,
+        hasValidIntercept,
+        isTypeVisible,
+        slopeType: typeof stat.linearSlope,
+        interceptType: typeof stat.linearIntercept
       })
-    })
-    
-    const lines = typeStatistics
-      .map(stat => {
-        const hasRegression = stat.linearSlope !== undefined && 
-                            stat.linearIntercept !== undefined && 
-                            !isNaN(stat.linearSlope) && 
-                            !isNaN(stat.linearIntercept)
-        const isVisible = visibleTypes[stat.type] === true
-        
-        console.log(`타입 ${stat.type} 필터링:`, { hasRegression, isVisible })
-        
-        if (!hasRegression || !isVisible) {
-          return null
-        }
-        
+      
+      // 2. 모든 조건을 만족하는지 확인
+      if (hasValidSlope && hasValidIntercept && isTypeVisible) {
         const line = [
           { x: xMin, y: stat.linearSlope! * xMin + stat.linearIntercept! },
           { x: xMax, y: stat.linearSlope! * xMax + stat.linearIntercept! }
         ]
         
-        const result = {
+        const color = fixedTypeColors[stat.type] || '#8884d8'
+        
+        const regression = {
           type: stat.type,
           line,
-          color: fixedTypeColors[stat.type] || '#8884d8'
+          color
         }
         
-        console.log(`타입 ${stat.type} 회귀선 생성:`, result)
-        return result
-      })
-      .filter(line => line !== null) as Array<{
-        type: string;
-        line: Array<{ x: number; y: number }>;
-        color: string;
-      }>
-    
-    console.log('타입별 회귀선 최종 결과:', {
-      totalLines: lines.length,
-      types: lines.map(l => l.type)
+        validRegressions.push(regression)
+        console.log(`✅ 타입 ${stat.type} 회귀선 생성 성공:`, regression)
+      } else {
+        console.log(`❌ 타입 ${stat.type} 회귀선 생성 실패`)
+      }
     })
     
-    return lines
+    console.log('=== 타입별 회귀선 계산 완료 ===')
+    console.log('최종 결과:', {
+      totalValidRegressions: validRegressions.length,
+      validTypes: validRegressions.map(r => r.type)
+    })
+    
+    return validRegressions
   }, [typeStatistics, regressionXRange, visibleTypes, fixedTypeColors])
 
   const typeGroups = useMemo(() => {
@@ -788,7 +822,7 @@ export default function ScatterPlot({
         </div>
       </div>
 
-      {/* 타입 필터 패널 */}
+      {/* 타입 필터 패널 (추세선 스타일 설정 제거) */}
       {showTypePanel && selectedColumns.useTypeColumn && selectedColumns.selectedTypeColumn && (
         <div className="mb-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
           <div className="flex items-center justify-between mb-3">
@@ -858,56 +892,6 @@ export default function ScatterPlot({
               타입별 추세선 {showTypeRegressions ? '모두끄기' : '모두보기'}
             </button>
           </div>
-
-          {/* 새로 추가: 전체 추세선 스타일 설정 */}
-          {showOverallRegression && (
-            <div className="mb-3 p-2 bg-white rounded border">
-              <h5 className="text-xs font-medium text-gray-600 mb-2">전체 추세선 스타일</h5>
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">색상</label>
-                  <input
-                    type="color"
-                    value={overallRegressionStyle.color}
-                    onChange={(e) => setOverallRegressionStyle({
-                      ...overallRegressionStyle,
-                      color: e.target.value
-                    })}
-                    className="w-full h-6 border border-gray-300 rounded cursor-pointer"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">두께: {overallRegressionStyle.strokeWidth}px</label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="5"
-                    value={overallRegressionStyle.strokeWidth}
-                    onChange={(e) => setOverallRegressionStyle({
-                      ...overallRegressionStyle,
-                      strokeWidth: parseInt(e.target.value)
-                    })}
-                    className="w-full"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">투명도: {Math.round(overallRegressionStyle.opacity * 100)}%</label>
-                  <input
-                    type="range"
-                    min="0.1"
-                    max="1"
-                    step="0.1"
-                    value={overallRegressionStyle.opacity}
-                    onChange={(e) => setOverallRegressionStyle({
-                      ...overallRegressionStyle,
-                      opacity: parseFloat(e.target.value)
-                    })}
-                    className="w-full"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
           
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
             {Object.entries(visibleTypes).map(([type, isVisible]) => {
@@ -944,13 +928,70 @@ export default function ScatterPlot({
         </div>
       )}
 
-      {/* 플롯 스타일 설정 패널 */}
+      {/* 수정: 플롯 스타일 설정 패널 (추세선 스타일 설정 추가) */}
       {showPlotPanel && (
         <div className="mb-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
           <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
             <Shapes className="h-4 w-4 mr-1" />
             플롯 스타일 설정
           </h4>
+          
+          {/* 새로 추가: 전체 추세선 스타일 설정 */}
+          {showOverallRegression && (
+            <div className="mb-4 p-3 bg-white rounded-lg border">
+              <h5 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
+                <TrendingUp className="h-4 w-4 mr-1" />
+                전체 추세선 스타일
+              </h5>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">색상</label>
+                  <input
+                    type="color"
+                    value={overallRegressionStyle.color}
+                    onChange={(e) => setOverallRegressionStyle({
+                      ...overallRegressionStyle,
+                      color: e.target.value
+                    })}
+                    className="w-full h-8 border border-gray-300 rounded cursor-pointer"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">두께: {overallRegressionStyle.strokeWidth}px</label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="5"
+                    value={overallRegressionStyle.strokeWidth}
+                    onChange={(e) => setOverallRegressionStyle({
+                      ...overallRegressionStyle,
+                      strokeWidth: parseInt(e.target.value)
+                    })}
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">투명도: {Math.round(overallRegressionStyle.opacity * 100)}%</label>
+                  <input
+                    type="range"
+                    min="0.1"
+                    max="1"
+                    step="0.1"
+                    value={overallRegressionStyle.opacity}
+                    onChange={(e) => setOverallRegressionStyle({
+                      ...overallRegressionStyle,
+                      opacity: parseFloat(e.target.value)
+                    })}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+              <div className="mt-2 text-xs text-gray-500">
+                💡 타입별 추세선은 각 그룹의 색상을 따라갑니다
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* 마커 모양 */}
             <div>
@@ -1471,7 +1512,7 @@ export default function ScatterPlot({
                 />
               ))}
               
-              {/* 전체 데이터 회귀선 (라벨 제거) */}
+              {/* 수정: 전체 데이터 회귀선 (더 엄격한 렌더링 조건) */}
               {regressionLine && showOverallRegression && (
                 <ReferenceLine 
                   segment={regressionLine}
@@ -1482,8 +1523,8 @@ export default function ScatterPlot({
                 />
               )}
 
-              {/* 타입별 회귀선 */}
-              {showTypeRegressions && typeRegressionLines.map(({ type, line, color }) => (
+              {/* 수정: 타입별 회귀선 (더 엄격한 렌더링 조건) */}
+              {showTypeRegressions && typeRegressionLines.length > 0 && typeRegressionLines.map(({ type, line, color }) => (
                 <ReferenceLine
                   key={`type-regression-${type}`}
                   segment={line}
@@ -1519,7 +1560,7 @@ export default function ScatterPlot({
         </div>
       )}
       
-      {/* 통계 정보 및 디버깅 */}
+      {/* 수정: 통계 정보 및 디버깅 (더 상세한 정보) */}
       <div className="mt-4 p-3 bg-gray-50 rounded-lg" style={{ fontFamily: styleOptions.fontFamily }}>
         <p className="text-sm text-gray-700">
           <strong>표시된 데이터 포인트:</strong> {typeGroups.reduce((sum, group) => sum + group.data.length, 0)}개 
@@ -1530,12 +1571,13 @@ export default function ScatterPlot({
           (X: {xAxisRange.min.toFixed(3)} ~ {xAxisRange.max.toFixed(3)}, Y: {yAxisRange.min.toFixed(3)} ~ {yAxisRange.max.toFixed(3)})
         </p>
         <p className="text-sm text-gray-700">
-          <strong>추세선:</strong> 전체 {showOverallRegression ? '표시' : '숨김'} 
-          {regressionLine && showOverallRegression && `(기울기: ${statistics.linearSlope?.toFixed(4)})`}, 
-          타입별 {showTypeRegressions ? `표시 (${typeRegressionLines.length}개)` : '숨김'}
+          <strong>전체 추세선:</strong> {showOverallRegression ? '표시' : '숨김'} 
+          {regressionLine && showOverallRegression && `(기울기: ${statistics.linearSlope?.toFixed(4)})`}
+          {!regressionLine && showOverallRegression && ' (데이터 없음)'}
         </p>
         <p className="text-sm text-gray-700">
-          <strong>타입별 회귀선 상세:</strong> {typeRegressionLines.map(l => l.type).join(', ') || '없음'}
+          <strong>타입별 추세선:</strong> {showTypeRegressions ? `표시 (${typeRegressionLines.length}개)` : '숨김'} 
+          {showTypeRegressions && typeRegressionLines.length > 0 && `- ${typeRegressionLines.map(l => l.type).join(', ')}`}
         </p>
         {selectedColumns.x.type === 'ratio' && (
           <p className="text-sm text-gray-700">
