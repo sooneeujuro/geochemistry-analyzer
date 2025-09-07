@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect, useRef } from 'react'
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts'
-import { GeochemData, StatisticalResult, ColumnSelection, ChartStyleOptions, AxisRange, PlotStyleOptions } from '@/types/geochem'
+import { GeochemData, StatisticalResult, ColumnSelection, ChartStyleOptions, PlotStyleOptions } from '@/types/geochem'
 import { Settings, Palette, Move3D, Download, Shapes, Eye, EyeOff, ZoomIn, ZoomOut, TrendingUp, TrendingDown } from 'lucide-react'
 
 interface ScatterPlotProps {
@@ -21,6 +21,14 @@ interface ScatterPlotProps {
     slope?: number
     intercept?: number
   }>
+}
+
+// 축 범위 타입 직접 정의
+interface CustomAxisRange {
+  xMin: number | 'auto'
+  xMax: number | 'auto'
+  yMin: number | 'auto'
+  yMax: number | 'auto'
 }
 
 // 커스텀 마커 컴포넌트
@@ -122,10 +130,14 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
     opacity: 0.8
   })
 
-  const [axisRange, setAxisRange] = useState<AxisRange>({
-    xMin: 'auto', xMax: 'auto',
-    yMin: 'auto', yMax: 'auto'
+  // 커스텀 축 범위 타입 사용
+  const [axisRange, setAxisRange] = useState<CustomAxisRange>({
+    xMin: 'auto', 
+    xMax: 'auto',
+    yMin: 'auto', 
+    yMax: 'auto'
   })
+  
   const [showStylePanel, setShowStylePanel] = useState(false)
   const [showPlotPanel, setShowPlotPanel] = useState(false)
   const [showAxisPanel, setShowAxisPanel] = useState(false)
