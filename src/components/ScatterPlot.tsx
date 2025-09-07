@@ -89,6 +89,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
     axisTitleSize: 14
   })
   
+  // PlotStyleOptions에서 허용되는 속성만 사용
   const [plotOptions, setPlotOptions] = useState<PlotStyleOptions>({
     size: 60,
     shape: 'circle',
@@ -96,10 +97,12 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
     strokeWidth: 1,
     strokeColor: '#000000',
     useCustomColors: false,
-    customColors: ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#F97316', '#06B6D4', '#84CC16'],
-    showGridlines: true,
-    backgroundColor: '#FFFFFF'
+    customColors: ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#F97316', '#06B6D4', '#84CC16']
   })
+
+  // 별도 상태로 완전 분리
+  const [showGridlines, setShowGridlines] = useState(true)
+  const [backgroundColor, setBackgroundColor] = useState('#FFFFFF')
 
   // 타입별 체크박스 상태
   const [visibleTypes, setVisibleTypes] = useState<Record<string, boolean>>({})
@@ -377,7 +380,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
     try {
       const html2canvas = (await import('html2canvas')).default
       const canvas = await html2canvas(chartRef.current, {
-        backgroundColor: plotOptions.backgroundColor,
+        backgroundColor: backgroundColor,
         scale: 2,
         logging: false,
         useCORS: true
@@ -649,16 +652,16 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
               <label className="block text-sm font-medium mb-1">배경색</label>
               <input
                 type="color"
-                value={plotOptions.backgroundColor}
-                onChange={(e) => setPlotOptions(prev => ({ ...prev, backgroundColor: e.target.value }))}
+                value={backgroundColor}
+                onChange={(e) => setBackgroundColor(e.target.value)}
                 className="w-full h-10 border rounded-md"
               />
             </div>
             <div className="flex items-center">
               <input
                 type="checkbox"
-                checked={plotOptions.showGridlines}
-                onChange={(e) => setPlotOptions(prev => ({ ...prev, showGridlines: e.target.checked }))}
+                checked={showGridlines}
+                onChange={(e) => setShowGridlines(e.target.checked)}
                 className="mr-2"
               />
               <label className="text-sm font-medium">격자 표시</label>
@@ -757,10 +760,10 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
       )}
 
       {/* 차트 */}
-      <div ref={chartRef} className="w-full h-96 p-4" style={{ backgroundColor: plotOptions.backgroundColor }}>
+      <div ref={chartRef} className="w-full h-96 p-4" style={{ backgroundColor: backgroundColor }}>
         <ResponsiveContainer width="100%" height="100%">
           <ScatterChart margin={{ top: 20, right: 30, bottom: 60, left: 60 }}>
-            {plotOptions.showGridlines && <CartesianGrid strokeDasharray="3 3" />}
+            {showGridlines && <CartesianGrid strokeDasharray="3 3" />}
             
             <XAxis
               type="number"
