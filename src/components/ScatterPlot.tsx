@@ -551,7 +551,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
               <label className="block text-sm font-medium mb-1">폰트</label>
               <select
                 value={styleOptions.fontFamily}
-                onChange={(e) => setStyleOptions(prev => ({ ...prev, fontFamily: e.target.value }))}
+                onChange={(e) => setStyleOptions(prev => ({ ...prev, fontFamily: e.target.value as any }))}
                 className="w-full p-2 border rounded-md"
               >
                 <option value="Arial">Arial</option>
