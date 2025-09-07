@@ -112,57 +112,25 @@ export default function ScatterPlot({
   const [exportFormat, setExportFormat] = useState<'png' | 'svg'>('png')
   const [customFileName, setCustomFileName] = useState('')
   
-  // 수정 1&2: 새로운 상태 추가
+  // 상태 관리
   const [visibleTypes, setVisibleTypes] = useState<{ [key: string]: boolean }>({})
-  const [useVisibleDataRange, setUseVisibleDataRange] = useState(false) // 수정 1: 표시 데이터 범위 사용 여부
-  const [showOverallRegression, setShowOverallRegression] = useState(true) // 수정 2: 전체 추세선 표시
-  const [showTypeRegressions, setShowTypeRegressions] = useState(true) // 수정 2: 타입별 추세선 표시
+  const [useVisibleDataRange, setUseVisibleDataRange] = useState(false)
+  const [showOverallRegression, setShowOverallRegression] = useState(true)
+  const [showTypeRegressions, setShowTypeRegressions] = useState(true)
   
-  // 수정 1: 전체 데이터 기반 고정 축 범위
+  // 전체 데이터 기반 고정 축 범위
   const [fullDataAxisRange, setFullDataAxisRange] = useState<{
     x: { min: number, max: number },
     y: { min: number, max: number }
   }>({ x: { min: 0, max: 1 }, y: { min: 0, max: 1 } })
   
+  // 축 범위 초기화 완료 여부
+  const [axisRangeInitialized, setAxisRangeInitialized] = useState(false)
+  
   // PCA 전용 클러스터 색상
   const pcaClusterColors = [
     '#E53E3E', '#3182CE', '#38A169', '#D69E2E', '#805AD5', '#DD6B20', '#319795', '#E53E3E'
   ]
-  
-  // 고정 색상 매핑
-  const fixedTypeColors = useMemo(() => {
-    const colorMap: { [key: string]: string } = {}
-    
-    if (isPCAMode) {
-      const types = Array.from(new Set(chartData.map(d => d.type))).sort()
-      types.forEach((type, index) => {
-        if (type === 'Invalid Data') {
-          colorMap[type] = '#9CA3AF'
-        } else {
-          const clusterIndex = parseInt(type.replace('Cluster ', '')) - 1
-          colorMap[type] = pcaClusterColors[clusterIndex % pcaClusterColors.length]
-        }
-      })
-    } else {
-      const types = Array.from(new Set(data.data.map(row => {
-        const type = selectedColumns.useTypeColumn && selectedColumns.selectedTypeColumn 
-          ? row[selectedColumns.selectedTypeColumn] 
-          : 'default'
-        return type
-      }))).sort()
-      
-      types.forEach((type, index) => {
-        if (plotOptions.useCustomColors) {
-          colorMap[type] = plotOptions.customColors[index % plotOptions.customColors.length]
-        } else {
-          const defaultColors = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#d084d0']
-          colorMap[type] = defaultColors[index % defaultColors.length]
-        }
-      })
-    }
-    
-    return colorMap
-  }, [data, selectedColumns.useTypeColumn, selectedColumns.selectedTypeColumn, plotOptions.useCustomColors, plotOptions.customColors, isPCAMode])
   
   // 축 범위 상태
   const [xAxisRange, setXAxisRange] = useState<AxisRange>({ auto: true, min: 0, max: 100 })
@@ -207,6 +175,41 @@ export default function ScatterPlot({
       .filter(point => !isNaN(point.x) && !isNaN(point.y) && isFinite(point.x) && isFinite(point.y))
   }, [data, selectedColumns, isPCAMode, clusterData])
 
+  // 고정 색상 매핑 (전체 데이터 기준)
+  const fixedTypeColors = useMemo(() => {
+    const colorMap: { [key: string]: string } = {}
+    
+    if (isPCAMode) {
+      const types = Array.from(new Set(chartData.map(d => d.type))).sort()
+      types.forEach((type, index) => {
+        if (type === 'Invalid Data') {
+          colorMap[type] = '#9CA3AF'
+        } else {
+          const clusterIndex = parseInt(type.replace('Cluster ', '')) - 1
+          colorMap[type] = pcaClusterColors[clusterIndex % pcaClusterColors.length]
+        }
+      })
+    } else {
+      const types = Array.from(new Set(data.data.map(row => {
+        const type = selectedColumns.useTypeColumn && selectedColumns.selectedTypeColumn 
+          ? row[selectedColumns.selectedTypeColumn] 
+          : 'default'
+        return type
+      }))).sort()
+      
+      types.forEach((type, index) => {
+        if (plotOptions.useCustomColors) {
+          colorMap[type] = plotOptions.customColors[index % plotOptions.customColors.length]
+        } else {
+          const defaultColors = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#d084d0']
+          colorMap[type] = defaultColors[index % defaultColors.length]
+        }
+      })
+    }
+    
+    return colorMap
+  }, [data, selectedColumns.useTypeColumn, selectedColumns.selectedTypeColumn, plotOptions.useCustomColors, plotOptions.customColors, isPCAMode, chartData])
+
   // visibleTypes 초기화
   useEffect(() => {
     const types = Array.from(new Set(chartData.map(d => d.type)))
@@ -225,9 +228,9 @@ export default function ScatterPlot({
     })
   }, [chartData])
 
-  // 수정 1: 전체 데이터 기반 축 범위 계산 (한 번만 실행)
+  // 전체 데이터 기반 축 범위 계산 (한 번만 실행)
   useEffect(() => {
-    if (chartData.length > 0) {
+    if (chartData.length > 0 && !axisRangeInitialized) {
       const xValues = chartData.map(d => d.x)
       const yValues = chartData.map(d => d.y)
       
@@ -252,7 +255,7 @@ export default function ScatterPlot({
       
       setFullDataAxisRange(newFullRange)
       
-      // 초기 축 범위 설정 (전체 데이터 기반)
+      // 초기 축 범위 설정 (전체 데이터 기준)
       setXAxisRange({
         auto: true,
         min: newFullRange.x.min,
@@ -263,10 +266,13 @@ export default function ScatterPlot({
         min: newFullRange.y.min,
         max: newFullRange.y.max
       })
+      
+      setAxisRangeInitialized(true)
+      console.log('축 범위 초기화 완료:', newFullRange)
     }
-  }, [chartData.length]) // chartData 길이가 변할 때만 실행
+  }, [chartData, axisRangeInitialized])
 
-  // 수정 1: 표시 데이터 범위로 확대/축소 함수
+  // 표시 데이터 범위로 확대/축소 함수
   const adjustToVisibleDataRange = () => {
     const visibleData = chartData.filter(point => visibleTypes[point.type])
     
@@ -295,9 +301,10 @@ export default function ScatterPlot({
     })
     
     setUseVisibleDataRange(true)
+    console.log('표시 데이터 범위로 확대 완료')
   }
 
-  // 수정 1: 전체 데이터 범위로 복원 함수
+  // 전체 데이터 범위로 복원 함수
   const resetToFullDataRange = () => {
     setXAxisRange({
       auto: true,
@@ -310,38 +317,77 @@ export default function ScatterPlot({
       max: fullDataAxisRange.y.max
     })
     setUseVisibleDataRange(false)
+    console.log('전체 데이터 범위로 복원 완료')
   }
 
+  // 회귀선 계산에 사용할 X 범위
+  const regressionXRange = useMemo(() => {
+    if (useVisibleDataRange) {
+      return { min: xAxisRange.min, max: xAxisRange.max }
+    } else {
+      return { min: fullDataAxisRange.x.min, max: fullDataAxisRange.x.max }
+    }
+  }, [useVisibleDataRange, xAxisRange, fullDataAxisRange])
+
+  // 전체 회귀선 계산
   const regressionLine = useMemo(() => {
-    if (!statistics.linearSlope || !statistics.linearIntercept || chartData.length === 0) return null
+    if (!statistics.linearSlope || !statistics.linearIntercept) return null
     
-    const xMin = xAxisRange.auto ? fullDataAxisRange.x.min : xAxisRange.min
-    const xMax = xAxisRange.auto ? fullDataAxisRange.x.max : xAxisRange.max
+    const xMin = regressionXRange.min
+    const xMax = regressionXRange.max
     
-    return [
+    const line = [
       { x: xMin, y: statistics.linearSlope * xMin + statistics.linearIntercept },
       { x: xMax, y: statistics.linearSlope * xMax + statistics.linearIntercept }
     ]
-  }, [chartData, statistics, xAxisRange, fullDataAxisRange])
+    
+    console.log('전체 회귀선 계산:', { 
+      slope: statistics.linearSlope, 
+      intercept: statistics.linearIntercept,
+      xRange: regressionXRange,
+      line 
+    })
+    
+    return line
+  }, [statistics, regressionXRange])
 
   // 타입별 회귀선 계산
   const typeRegressionLines = useMemo(() => {
     if (!typeStatistics || typeStatistics.length === 0) return []
     
-    const xMin = xAxisRange.auto ? fullDataAxisRange.x.min : xAxisRange.min
-    const xMax = xAxisRange.auto ? fullDataAxisRange.x.max : xAxisRange.max
+    const xMin = regressionXRange.min
+    const xMax = regressionXRange.max
     
-    return typeStatistics
-      .filter(stat => stat.linearSlope && stat.linearIntercept && visibleTypes[stat.type])
-      .map(stat => ({
-        type: stat.type,
-        line: [
+    const lines = typeStatistics
+      .filter(stat => {
+        const hasRegression = stat.linearSlope && stat.linearIntercept
+        const isVisible = visibleTypes[stat.type]
+        console.log(`타입 ${stat.type}:`, { hasRegression, isVisible, slope: stat.linearSlope, intercept: stat.linearIntercept })
+        return hasRegression && isVisible
+      })
+      .map(stat => {
+        const line = [
           { x: xMin, y: stat.linearSlope! * xMin + stat.linearIntercept! },
           { x: xMax, y: stat.linearSlope! * xMax + stat.linearIntercept! }
-        ],
-        color: fixedTypeColors[stat.type] || '#8884d8'
-      }))
-  }, [typeStatistics, xAxisRange, chartData, visibleTypes, fixedTypeColors, fullDataAxisRange])
+        ]
+        
+        console.log(`타입 ${stat.type} 회귀선:`, {
+          slope: stat.linearSlope,
+          intercept: stat.linearIntercept,
+          color: fixedTypeColors[stat.type],
+          line
+        })
+        
+        return {
+          type: stat.type,
+          line,
+          color: fixedTypeColors[stat.type] || '#8884d8'
+        }
+      })
+    
+    console.log('타입별 회귀선 총 개수:', lines.length)
+    return lines
+  }, [typeStatistics, regressionXRange, visibleTypes, fixedTypeColors])
 
   const typeGroups = useMemo(() => {
     if (!selectedColumns.useTypeColumn || !selectedColumns.selectedTypeColumn) {
@@ -404,7 +450,7 @@ export default function ScatterPlot({
     return `${originalFileName}_${xLabel} vs ${yLabel}`
   }
 
-  // 그래프 내보내기 함수 (기존과 동일)
+  // 그래프 내보내기 함수
   const exportChart = async (format: 'png' | 'svg', fileName?: string) => {
     if (!chartRef.current) return
 
@@ -631,9 +677,9 @@ export default function ScatterPlot({
     fill: '#6B7280'
   }
 
-  // 축 도메인 설정
-  const xDomain = xAxisRange.auto ? ['auto', 'auto'] : [xAxisRange.min, xAxisRange.max]
-  const yDomain = yAxisRange.auto ? ['auto', 'auto'] : [yAxisRange.min, yAxisRange.max]
+  // 축 도메인 설정 (항상 현재 설정된 범위 사용)
+  const xDomain = xAxisRange.auto ? [xAxisRange.min, xAxisRange.max] : [xAxisRange.min, xAxisRange.max]
+  const yDomain = yAxisRange.auto ? [yAxisRange.min, yAxisRange.max] : [yAxisRange.min, yAxisRange.max]
 
   return (
     <div className="bg-white p-4 rounded-lg border">
@@ -703,7 +749,7 @@ export default function ScatterPlot({
         </div>
       </div>
 
-      {/* 수정 1&2: 타입 필터 패널 (축 범위 조정 및 추세선 제어 기능 추가) */}
+      {/* 타입 필터 패널 */}
       {showTypePanel && selectedColumns.useTypeColumn && selectedColumns.selectedTypeColumn && (
         <div className="mb-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
           <div className="flex items-center justify-between mb-3">
@@ -711,17 +757,15 @@ export default function ScatterPlot({
               <Eye className="h-4 w-4 mr-1" />
               데이터 타입 표시 설정
             </h4>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={toggleAllTypes}
-                className="text-xs text-purple-600 hover:text-purple-800 transition-colors"
-              >
-                {Object.values(visibleTypes).every(v => v) ? '모두 숨기기' : '모두 표시'}
-              </button>
-            </div>
+            <button
+              onClick={toggleAllTypes}
+              className="text-xs text-purple-600 hover:text-purple-800 transition-colors"
+            >
+              {Object.values(visibleTypes).every(v => v) ? '모두 숨기기' : '모두 표시'}
+            </button>
           </div>
           
-          {/* 수정 1: 축 범위 조정 버튼들 */}
+          {/* 축 범위 조정 버튼들 */}
           <div className="mb-3 flex items-center gap-2 p-2 bg-white rounded border">
             <span className="text-xs font-medium text-gray-600">축 범위:</span>
             <button
@@ -749,7 +793,7 @@ export default function ScatterPlot({
             </button>
           </div>
 
-          {/* 수정 2: 추세선 제어 버튼들 */}
+          {/* 추세선 제어 버튼들 */}
           <div className="mb-3 flex items-center gap-2 p-2 bg-white rounded border">
             <span className="text-xs font-medium text-gray-600">추세선:</span>
             <button
@@ -811,7 +855,7 @@ export default function ScatterPlot({
         </div>
       )}
 
-      {/* 플롯 스타일 설정 패널 (기존과 동일) */}
+      {/* 플롯 스타일 설정 패널 */}
       {showPlotPanel && (
         <div className="mb-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
           <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
@@ -991,7 +1035,7 @@ export default function ScatterPlot({
         </div>
       )}
 
-      {/* 축 범위 설정 패널 (기존과 동일) */}
+      {/* 축 범위 설정 패널 */}
       {showAxisPanel && (
         <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
           <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
@@ -1104,7 +1148,7 @@ export default function ScatterPlot({
         </div>
       )}
 
-      {/* 스타일 설정 패널 (기존과 동일) */}
+      {/* 스타일 설정 패널 */}
       {showStylePanel && (
         <div className="mb-4 p-4 bg-gray-50 rounded-lg border">
           <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
@@ -1206,7 +1250,7 @@ export default function ScatterPlot({
         </div>
       )}
 
-      {/* 파일명 설정 대화상자 (기존과 동일) */}
+      {/* 파일명 설정 대화상자 */}
       {showExportDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-96 max-w-full mx-4">
@@ -1338,17 +1382,18 @@ export default function ScatterPlot({
                 />
               ))}
               
-              {/* 수정 2: 전체 데이터 회귀선 (조건부 표시) */}
+              {/* 전체 데이터 회귀선 */}
               {regressionLine && showOverallRegression && (
                 <ReferenceLine 
                   segment={regressionLine}
                   stroke="#EF4444"
                   strokeWidth={2}
                   strokeDasharray="5 5"
+                  label="Overall"
                 />
               )}
 
-              {/* 수정 2: 타입별 회귀선 (조건부 표시) */}
+              {/* 타입별 회귀선 */}
               {showTypeRegressions && typeRegressionLines.map(({ type, line, color }) => (
                 <ReferenceLine
                   key={`type-regression-${type}`}
@@ -1384,18 +1429,20 @@ export default function ScatterPlot({
         </div>
       )}
       
-      {/* 통계 정보 */}
+      {/* 통계 정보 및 디버깅 */}
       <div className="mt-4 p-3 bg-gray-50 rounded-lg" style={{ fontFamily: styleOptions.fontFamily }}>
         <p className="text-sm text-gray-700">
           <strong>표시된 데이터 포인트:</strong> {typeGroups.reduce((sum, group) => sum + group.data.length, 0)}개 
           (전체 {chartData.length}개 중)
         </p>
         <p className="text-sm text-gray-700">
-          <strong>축 범위:</strong> {useVisibleDataRange ? '표시 데이터 기준' : '전체 데이터 기준'}
+          <strong>축 범위:</strong> {useVisibleDataRange ? '표시 데이터 기준' : '전체 데이터 기준'} 
+          (X: {xAxisRange.min.toFixed(3)} ~ {xAxisRange.max.toFixed(3)}, Y: {yAxisRange.min.toFixed(3)} ~ {yAxisRange.max.toFixed(3)})
         </p>
         <p className="text-sm text-gray-700">
-          <strong>추세선:</strong> 전체 {showOverallRegression ? '표시' : '숨김'}, 
-          타입별 {showTypeRegressions ? '표시' : '숨김'}
+          <strong>추세선:</strong> 전체 {showOverallRegression ? '표시' : '숨김'} 
+          {regressionLine && showOverallRegression && `(기울기: ${statistics.linearSlope?.toFixed(4)})`}, 
+          타입별 {showTypeRegressions ? `표시 (${typeRegressionLines.length}개)` : '숨김'}
         </p>
         {selectedColumns.x.type === 'ratio' && (
           <p className="text-sm text-gray-700">
@@ -1424,7 +1471,8 @@ export default function ScatterPlot({
         )}
         {typeStatistics && typeStatistics.length > 0 && (
           <p className="text-sm text-gray-700">
-            <strong>타입별 분석:</strong> {typeStatistics.length}개 그룹
+            <strong>타입별 분석:</strong> {typeStatistics.length}개 그룹 
+            (회귀선 가능: {typeStatistics.filter(s => s.linearSlope && s.linearIntercept).length}개)
           </p>
         )}
         <p className="text-xs text-gray-500 mt-2">
