@@ -861,17 +861,20 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
             })}
 
             {/* 전체 추세선 */}
-            {showOverallTrend && statistics.slope !== undefined && statistics.intercept !== undefined && 
-             isFinite(statistics.slope) && isFinite(statistics.intercept) && (
+            {showOverallTrend && statistics.linearRegression && 
+             statistics.linearRegression.slope !== undefined && 
+             statistics.linearRegression.intercept !== undefined && 
+             isFinite(statistics.linearRegression.slope) && 
+             isFinite(statistics.linearRegression.intercept) && (
               <ReferenceLine
-                segment={generateTrendlinePoints(statistics.slope, statistics.intercept, currentRange)}
+                segment={generateTrendlinePoints(statistics.linearRegression.slope, statistics.linearRegression.intercept, currentRange)}
                 stroke={trendlineStyle.color}
                 strokeWidth={trendlineStyle.strokeWidth}
                 strokeOpacity={trendlineStyle.opacity}
                 strokeDasharray="0"
               />
             )}
-
+            
             {/* 타입별 추세선 */}
             {typeStatistics.map(typeStat => {
               if (!showTypeTrends[typeStat.type] || visibleTypes[typeStat.type] === false) return null
