@@ -193,19 +193,11 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
         yValue = numerator / denominator
       }
 
-      let type = 'Data Point'
+      let type = 'Unknown'
       if (isPCAMode && clusterData.length > index) {
         type = `Cluster ${clusterData[index]}`
-      } else {
-        // 일반적인 타입 컬럼명들을 시도
-        const possibleTypeColumns = ['Type', 'type', 'Category', 'category', 'Group', 'group', 'Class', 'class']
-        
-        for (const col of possibleTypeColumns) {
-          if (row[col] && typeof row[col] === 'string') {
-            type = row[col]
-            break
-          }
-        }
+      } else if ('type' in selectedColumns && (selectedColumns as any).type && row[(selectedColumns as any).type]) {
+        type = row[(selectedColumns as any).type]
       }
 
       return {
