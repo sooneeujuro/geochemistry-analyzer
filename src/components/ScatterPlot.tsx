@@ -97,7 +97,6 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
     axisTitleSize: 14
   })
   
-  // PlotStyleOptions에서 허용되는 속성만 사용
   const [plotOptions, setPlotOptions] = useState<PlotStyleOptions>({
     size: 60,
     shape: 'circle',
@@ -108,29 +107,20 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
     customColors: ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#F97316', '#06B6D4', '#84CC16']
   })
 
-  // 별도 상태로 완전 분리
   const [showGridlines, setShowGridlines] = useState(true)
   const [backgroundColor, setBackgroundColor] = useState('#FFFFFF')
-
-  // 타입별 체크박스 상태
   const [visibleTypes, setVisibleTypes] = useState<Record<string, boolean>>({})
-  
-  // 축 범위 설정
   const [useVisibleDataRange, setUseVisibleDataRange] = useState(false)
-  
-  // 추세선 표시 설정
   const [showOverallTrend, setShowOverallTrend] = useState(true)
   const [showTypeTrends, setShowTypeTrends] = useState<Record<string, boolean>>({})
   const [showAllTypeTrends, setShowAllTypeTrends] = useState(false)
   
-  // 추세선 스타일 설정
   const [trendlineStyle, setTrendlineStyle] = useState({
     color: '#FF0000',
     strokeWidth: 2,
     opacity: 0.8
   })
 
-  // 커스텀 축 범위 타입 사용
   const [axisRange, setAxisRange] = useState<CustomAxisRange>({
     xMin: 'auto', 
     xMax: 'auto',
@@ -142,33 +132,14 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
   const [showPlotPanel, setShowPlotPanel] = useState(false)
   const [showAxisPanel, setShowAxisPanel] = useState(false)
 
-  // 디버깅 로그 추가
-  console.log('ScatterPlot 렌더링:', {
-    isPCAMode,
-    clusterDataLength: clusterData.length,
-    dataLength: data.data.length,
-    selectedColumns: selectedColumns,
-    typeStatisticsLength: typeStatistics.length,
-    statistics: statistics,
-    typeStatistics: typeStatistics
+  // 디버깅 로그
+  console.log('ScatterPlot 데이터:', {
+    statistics,
+    typeStatistics,
+    hasLinearRegression: !!(statistics as any)?.linearRegression,
+    directSlope: (statistics as any)?.slope,
+    directIntercept: (statistics as any)?.intercept
   })
-
-  // 축 데이터 계산 함수
-  const calculateAxisData = (axisConfig: NonNullable<ColumnSelection['x']>) => {
-    if (axisConfig.type === 'single') {
-      return data.data
-        .map(row => parseFloat(row[axisConfig.numerator]))
-        .filter(val => !isNaN(val) && isFinite(val))
-    } else {
-      return data.data
-        .map(row => {
-          const numerator = parseFloat(row[axisConfig.numerator])
-          const denominator = parseFloat(row[axisConfig.denominator!])
-          return numerator / denominator
-        })
-        .filter(val => !isNaN(val) && isFinite(val))
-    }
-  }
 
   // 차트 데이터 준비
   const chartData = useMemo(() => {
@@ -196,8 +167,8 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
       let type = 'Unknown'
       if (isPCAMode && clusterData.length > index) {
         type = `Cluster ${clusterData[index]}`
-      } else if ('type' in selectedColumns && (selectedColumns as any).type && row[(selectedColumns as any).type]) {
-        type = row[(selectedColumns as any).type]
+      } else if (selectedColumns.type && row[selectedColumns.type]) {
+        type = row[selectedColumns.type]?.toString().trim() || 'Unknown'
       }
 
       return {
@@ -215,7 +186,6 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
     const groups: Record<string, typeof chartData> = {}
     const allTypes = Array.from(new Set(chartData.map(item => item.type))).sort()
     
-    // 고정된 색상 맵 생성
     const colorMap: Record<string, string> = {}
     allTypes.forEach((type, index) => {
       colorMap[type] = plotOptions.customColors[index % plotOptions.customColors.length]
@@ -231,7 +201,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
     return { typeGroups: groups, fixedColorMap: colorMap }
   }, [chartData, plotOptions.customColors])
 
-  // 전체 데이터 범위 계산 (모든 데이터 기준)
+  // 전체 데이터 범위 계산
   const fullDataRange = useMemo(() => {
     if (chartData.length === 0) return { xMin: 0, xMax: 100, yMin: 0, yMax: 100 }
     
@@ -243,7 +213,6 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
     const yMin = Math.min(...yValues)
     const yMax = Math.max(...yValues)
     
-    // 여백 추가 (5%)
     const xRange = xMax - xMin
     const yRange = yMax - yMin
     const xPadding = xRange * 0.05
@@ -257,7 +226,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
     }
   }, [chartData])
 
-  // 표시되는 데이터 범위 계산 (체크박스 기준)
+  // 표시되는 데이터 범위 계산
   const visibleDataRange = useMemo(() => {
     const visibleData = chartData.filter(item => visibleTypes[item.type] !== false)
     if (visibleData.length === 0) return fullDataRange
@@ -283,10 +252,9 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
     }
   }, [chartData, visibleTypes, fullDataRange])
 
-  // 실제 사용할 범위 결정
   const currentRange = useVisibleDataRange ? visibleDataRange : fullDataRange
 
-  // 초기 체크박스 상태 설정
+  // 초기 설정
   useEffect(() => {
     const types = Object.keys(typeGroups)
     const newVisibleTypes: Record<string, boolean> = {}
@@ -309,12 +277,75 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
     }
   }, [typeGroups])
 
-  // 체크박스 토글 함수
+  // 추세선 좌표 계산 함수 (두 점만 반환)
+  const calculateTrendlineSegment = (slope: number, intercept: number, xRange: { xMin: number, xMax: number }) => {
+    if (!isFinite(slope) || !isFinite(intercept)) return null
+    
+    return [
+      { x: xRange.xMin, y: slope * xRange.xMin + intercept },
+      { x: xRange.xMax, y: slope * xRange.xMax + intercept }
+    ]
+  }
+
+  // 전체 추세선 데이터
+  const overallTrendSegment = useMemo(() => {
+    // 여러 가능한 statistics 구조 확인
+    let slope: number | undefined
+    let intercept: number | undefined
+    
+    const stats = statistics as any
+    
+    if (stats?.linearRegression?.slope !== undefined && stats?.linearRegression?.intercept !== undefined) {
+      slope = stats.linearRegression.slope
+      intercept = stats.linearRegression.intercept
+    } else if (stats?.slope !== undefined && stats?.intercept !== undefined) {
+      slope = stats.slope
+      intercept = stats.intercept
+    } else if (stats?.regression?.slope !== undefined && stats?.regression?.intercept !== undefined) {
+      slope = stats.regression.slope
+      intercept = stats.regression.intercept
+    }
+    
+    console.log('전체 추세선 데이터:', { slope, intercept, statistics })
+    
+    if (slope !== undefined && intercept !== undefined) {
+      return calculateTrendlineSegment(slope, intercept, currentRange)
+    }
+    
+    return null
+  }, [statistics, currentRange])
+
+  // 타입별 추세선 데이터
+  const typeRegressionSegments = useMemo(() => {
+    const segments: Array<{ type: string, segment: any[], color: string }> = []
+    
+    typeStatistics.forEach(typeStat => {
+      if (!showTypeTrends[typeStat.type] || visibleTypes[typeStat.type] === false) return
+      if (typeStat.slope === undefined || typeStat.intercept === undefined) return
+      
+      const segment = calculateTrendlineSegment(typeStat.slope, typeStat.intercept, currentRange)
+      if (segment) {
+        segments.push({
+          type: typeStat.type,
+          segment,
+          color: fixedColorMap[typeStat.type] || '#666666'
+        })
+        
+        console.log(`타입별 추세선 생성: ${typeStat.type}`, {
+          slope: typeStat.slope,
+          intercept: typeStat.intercept,
+          segment,
+          color: fixedColorMap[typeStat.type]
+        })
+      }
+    })
+    
+    return segments
+  }, [typeStatistics, showTypeTrends, visibleTypes, currentRange, fixedColorMap])
+
+  // 토글 함수들
   const toggleTypeVisibility = (type: string) => {
-    setVisibleTypes(prev => ({
-      ...prev,
-      [type]: !prev[type]
-    }))
+    setVisibleTypes(prev => ({ ...prev, [type]: !prev[type] }))
   }
 
   const toggleAllTypes = () => {
@@ -327,12 +358,8 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
     setVisibleTypes(newVisibleTypes)
   }
 
-  // 추세선 토글 함수들
   const toggleTypeTrendline = (type: string) => {
-    setShowTypeTrends(prev => ({
-      ...prev,
-      [type]: !prev[type]
-    }))
+    setShowTypeTrends(prev => ({ ...prev, [type]: !prev[type] }))
   }
 
   const toggleAllTypeTrendlines = () => {
@@ -345,22 +372,6 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
     setShowTypeTrends(newShowTypeTrends)
   }
 
-  // 추세선 데이터 생성 함수
-  const generateTrendlinePoints = (slope: number, intercept: number, range: { xMin: number, xMax: number }) => {
-    if (!isFinite(slope) || !isFinite(intercept)) return []
-    
-    const points = []
-    const step = (range.xMax - range.xMin) / 100
-    
-    for (let x = range.xMin; x <= range.xMax; x += step) {
-      const y = slope * x + intercept
-      points.push({ x, y })
-    }
-    
-    return points
-  }
-
-  // 표시할 데이터 필터링
   const visibleData = chartData.filter(item => visibleTypes[item.type] !== false)
 
   const formatAxisLabel = (value: any) => {
@@ -369,9 +380,9 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
     switch (styleOptions.numberFormat) {
       case 'scientific':
         return value.toExponential(2)
-      case 'comma':  // ← engineering을 comma로 변경!
+      case 'comma':
         return value.toLocaleString(undefined, { maximumFractionDigits: 3 })
-      default: // 'normal'
+      default:
         return value.toFixed(3)
     }
   }
@@ -544,7 +555,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
               >
                 <option value="normal">일반</option>
                 <option value="scientific">과학적 표기법</option>
-                <option value="comma">천 단위 구분</option>  // ← engineering을 comma로 변경!
+                <option value="comma">천 단위 구분</option>
               </select>
             </div>
             <div>
@@ -861,13 +872,9 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
             })}
 
             {/* 전체 추세선 */}
-            {showOverallTrend && statistics.linearRegression && 
-             statistics.linearRegression.slope !== undefined && 
-             statistics.linearRegression.intercept !== undefined && 
-             isFinite(statistics.linearRegression.slope) && 
-             isFinite(statistics.linearRegression.intercept) && (
+            {showOverallTrend && overallTrendSegment && (
               <ReferenceLine
-                segment={generateTrendlinePoints(statistics.linearRegression.slope, statistics.linearRegression.intercept, currentRange)}
+                segment={overallTrendSegment}
                 stroke={trendlineStyle.color}
                 strokeWidth={trendlineStyle.strokeWidth}
                 strokeOpacity={trendlineStyle.opacity}
@@ -875,29 +882,17 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
               />
             )}
             
-            {/* 타입별 추세선 */}
-            {typeStatistics.map(typeStat => {
-              if (!showTypeTrends[typeStat.type] || visibleTypes[typeStat.type] === false) return null
-              if (typeStat.slope === undefined || typeStat.intercept === undefined) return null
-              if (!isFinite(typeStat.slope) || !isFinite(typeStat.intercept)) return null
-              
-              console.log(`Rendering trendline for ${typeStat.type}:`, {
-                slope: typeStat.slope,
-                intercept: typeStat.intercept,
-                color: fixedColorMap[typeStat.type]
-              })
-              
-              return (
-                <ReferenceLine
-                  key={`trend-${typeStat.type}`}
-                  segment={generateTrendlinePoints(typeStat.slope, typeStat.intercept, currentRange)}
-                  stroke={fixedColorMap[typeStat.type]}
-                  strokeWidth={2}
-                  strokeOpacity={0.8}
-                  strokeDasharray="5 5"
-                />
-              )
-            })}
+            {/* 타입별 추세선들 */}
+            {typeRegressionSegments.map(({ type, segment, color }) => (
+              <ReferenceLine
+                key={`trend-${type}`}
+                segment={segment}
+                stroke={color}
+                strokeWidth={2}
+                strokeOpacity={0.8}
+                strokeDasharray="5 5"
+              />
+            ))}
           </ScatterChart>
         </ResponsiveContainer>
       </div>
