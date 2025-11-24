@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState, useEffect, useRef } from 'react'
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts'
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell, LabelList } from 'recharts'
 import { GeochemData, StatisticalResult, ColumnSelection, ChartStyleOptions, PlotStyleOptions } from '@/types/geochem'
 import { Settings, Palette, Move3D, Download, Shapes, Eye, EyeOff, ZoomIn, ZoomOut, TrendingUp, TrendingDown } from 'lucide-react'
 
@@ -101,6 +101,8 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
   const [yNumberFormat, setYNumberFormat] = useState<'normal' | 'scientific' | 'comma'>('normal')
   const [xExponentialFormat, setXExponentialFormat] = useState<'standard' | 'superscript'>('standard')
   const [yExponentialFormat, setYExponentialFormat] = useState<'standard' | 'superscript'>('standard')
+  const [xAxisLabelOffset, setXAxisLabelOffset] = useState(-50)
+  const [yAxisLabelOffset, setYAxisLabelOffset] = useState(-10)
   
   const [plotOptions, setPlotOptions] = useState<PlotStyleOptions>({
     size: 60,
@@ -141,6 +143,10 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
   const [show1to1Line, setShow1to1Line] = useState(false)
   const [chartTitle, setChartTitle] = useState('')
   const [showChartTitle, setShowChartTitle] = useState(false)
+  const [invertXAxis, setInvertXAxis] = useState(false)
+  const [invertYAxis, setInvertYAxis] = useState(false)
+  const [showDataLabels, setShowDataLabels] = useState(false)
+  const [labelFontSize, setLabelFontSize] = useState(10)
 
   const [showStylePanel, setShowStylePanel] = useState(false)
   const [showPlotPanel, setShowPlotPanel] = useState(false)
@@ -579,6 +585,45 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
     }
   }
 
+  const exportSVG = () => {
+    if (!chartRef.current) return
+
+    try {
+      // Recharts가 생성한 SVG 요소 찾기
+      const svgElement = chartRef.current.querySelector('svg')
+      if (!svgElement) {
+        alert('SVG를 찾을 수 없습니다.')
+        return
+      }
+
+      // SVG를 복제
+      const clonedSvg = svgElement.cloneNode(true) as SVGElement
+
+      // 배경색을 rect로 추가
+      const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+      bgRect.setAttribute('width', '100%')
+      bgRect.setAttribute('height', '100%')
+      bgRect.setAttribute('fill', backgroundColor)
+      clonedSvg.insertBefore(bgRect, clonedSvg.firstChild)
+
+      // SVG를 문자열로 변환
+      const serializer = new XMLSerializer()
+      const svgString = serializer.serializeToString(clonedSvg)
+
+      // Blob 생성 및 다운로드
+      const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.download = `scatter-plot-${Date.now()}.svg`
+      link.href = url
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('SVG export failed:', error)
+      alert('SVG 내보내기에 실패했습니다.')
+    }
+  }
+
   if (!selectedColumns.x || !selectedColumns.y) {
     return (
       <div className="p-6 text-center text-gray-500">
@@ -589,38 +634,62 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
 
   return (
     <div className="space-y-4">
-      {/* 컨트롤 패널 */}
-      <div className="flex flex-wrap gap-2 p-4 bg-gray-50 rounded-lg">
+      {/* 반응형 레이아웃: 옵션과 플롯 */}
+      <div className="flex flex-col xl:flex-row gap-4">
+        {/* 왼쪽: 옵션 패널들 */}
+        <div className="space-y-4 xl:w-96 flex-shrink-0">
+          {/* 컨트롤 패널 */}
+          <div className="flex flex-wrap gap-2 p-4 bg-gray-50 rounded-lg">
         <button
           onClick={() => setShowStylePanel(!showStylePanel)}
-          className="flex items-center gap-2 px-3 py-2 bg-white border rounded-md hover:bg-gray-50"
+          className={`flex items-center gap-2 px-3 py-2 border rounded-md transition-colors ${
+            showStylePanel
+              ? 'bg-blue-100 border-blue-400 text-blue-700 font-medium'
+              : 'bg-white border-gray-300 hover:bg-gray-50'
+          }`}
         >
           <Palette className="w-4 h-4" />
           차트 스타일
         </button>
-        
+
         <button
           onClick={() => setShowPlotPanel(!showPlotPanel)}
-          className="flex items-center gap-2 px-3 py-2 bg-white border rounded-md hover:bg-gray-50"
+          className={`flex items-center gap-2 px-3 py-2 border rounded-md transition-colors ${
+            showPlotPanel
+              ? 'bg-purple-100 border-purple-400 text-purple-700 font-medium'
+              : 'bg-white border-gray-300 hover:bg-gray-50'
+          }`}
         >
           <Shapes className="w-4 h-4" />
           플롯 스타일
         </button>
-        
+
         <button
           onClick={() => setShowAxisPanel(!showAxisPanel)}
-          className="flex items-center gap-2 px-3 py-2 bg-white border rounded-md hover:bg-gray-50"
+          className={`flex items-center gap-2 px-3 py-2 border rounded-md transition-colors ${
+            showAxisPanel
+              ? 'bg-green-100 border-green-400 text-green-700 font-medium'
+              : 'bg-white border-gray-300 hover:bg-gray-50'
+          }`}
         >
           <Move3D className="w-4 h-4" />
           축 범위
         </button>
-        
+
         <button
           onClick={exportChart}
           className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
         >
           <Download className="w-4 h-4" />
-          이미지 저장
+          PNG 저장
+        </button>
+
+        <button
+          onClick={exportSVG}
+          className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700"
+        >
+          <Download className="w-4 h-4" />
+          SVG 저장
         </button>
       </div>
 
@@ -819,6 +888,58 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
               <label className="text-sm font-medium">축 제목 굵게</label>
             </div>
           </div>
+
+          {/* 축 제목 위치 조정 */}
+          <div className="col-span-full border-t pt-4 mt-4">
+            <h4 className="font-medium mb-3">축 제목 위치 조정</h4>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  X축 제목 위치 (아래 방향: -, 위 방향: +)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min="-100"
+                    max="0"
+                    value={xAxisLabelOffset}
+                    onChange={(e) => setXAxisLabelOffset(parseInt(e.target.value))}
+                    className="flex-1"
+                  />
+                  <input
+                    type="number"
+                    value={xAxisLabelOffset}
+                    onChange={(e) => setXAxisLabelOffset(parseInt(e.target.value) || -50)}
+                    className="w-20 p-1 border rounded-md text-sm"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Y축 제목 위치 (왼쪽: -, 오른쪽: +)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min="-60"
+                    max="20"
+                    value={yAxisLabelOffset}
+                    onChange={(e) => setYAxisLabelOffset(parseInt(e.target.value))}
+                    className="flex-1"
+                  />
+                  <input
+                    type="number"
+                    value={yAxisLabelOffset}
+                    onChange={(e) => setYAxisLabelOffset(parseInt(e.target.value) || -10)}
+                    className="w-20 p-1 border rounded-md text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              💡 제목이 숫자와 겹치면 음수 값을 더 크게 조정하세요 (예: -60, -80)
+            </p>
+          </div>
         </div>
       )}
 
@@ -902,6 +1023,40 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                 className="mr-2"
               />
               <label className="text-sm font-medium">격자 표시</label>
+            </div>
+
+            {/* 데이터 라벨 설정 */}
+            <div className="col-span-full border-t pt-4 mt-4">
+              <h4 className="font-medium mb-3">데이터 포인트 라벨</h4>
+              <div className="flex items-center gap-3 mb-3">
+                <input
+                  type="checkbox"
+                  id="showDataLabels"
+                  checked={showDataLabels}
+                  onChange={(e) => setShowDataLabels(e.target.checked)}
+                  className="mr-1"
+                />
+                <label htmlFor="showDataLabels" className="text-sm font-medium">데이터 라벨 표시 (타입 이름)</label>
+              </div>
+              {showDataLabels && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">라벨 폰트 크기</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range"
+                      min="6"
+                      max="16"
+                      value={labelFontSize}
+                      onChange={(e) => setLabelFontSize(parseInt(e.target.value))}
+                      className="flex-1"
+                    />
+                    <span className="text-sm text-gray-500 w-8">{labelFontSize}</span>
+                  </div>
+                  <p className="text-xs text-amber-600 mt-2">
+                    ⚠️ 데이터가 많으면 라벨이 겹칠 수 있습니다.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* 차트 제목 설정 */}
@@ -1108,6 +1263,30 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                 <label htmlFor="show1to1Line" className="text-sm font-medium">1:1 참조선 표시</label>
               </div>
             </div>
+
+            {/* 축 반전 */}
+            <div className="mt-3 grid grid-cols-2 gap-4">
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="invertXAxis"
+                  checked={invertXAxis}
+                  onChange={(e) => setInvertXAxis(e.target.checked)}
+                  className="mr-2"
+                />
+                <label htmlFor="invertXAxis" className="text-sm font-medium">X축 반전</label>
+              </div>
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="invertYAxis"
+                  checked={invertYAxis}
+                  onChange={(e) => setInvertYAxis(e.target.checked)}
+                  className="mr-2"
+                />
+                <label htmlFor="invertYAxis" className="text-sm font-medium">Y축 반전 (깊이 표시용)</label>
+              </div>
+            </div>
             {(xLogScale || yLogScale) && (
               <p className="text-xs text-amber-600 mt-2">
                 ⚠️ 로그 스케일은 양수 값에만 적용됩니다. 0 이하의 값은 표시되지 않습니다.
@@ -1157,9 +1336,11 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
           </div>
         </div>
       )}
+        </div>
 
-      {/* 차트 */}
-      <div ref={chartRef} className="w-full p-4" style={{
+        {/* 오른쪽: 차트 */}
+        <div className="flex-1 min-w-0">
+          <div ref={chartRef} className="w-full p-4" style={{
         backgroundColor: backgroundColor,
         aspectRatio: maintain1to1Ratio ? '1 / 1' : 'auto',
         height: maintain1to1Ratio ? 'auto' : '24rem'
@@ -1179,6 +1360,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
               type="number"
               dataKey="x"
               scale={xLogScale ? 'log' : 'linear'}
+              reversed={invertXAxis}
               domain={getLogSafeDomain(
                 axisRange.xMin === 'auto' ? adjusted1to1Range.xMin : axisRange.xMin,
                 axisRange.xMax === 'auto' ? adjusted1to1Range.xMax : axisRange.xMax,
@@ -1193,7 +1375,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
               label={{
                 value: getAxisTitle(selectedColumns.x!),
                 position: 'insideBottom',
-                offset: -40,
+                offset: xAxisLabelOffset,
                 style: {
                   textAnchor: 'middle',
                   fontSize: styleOptions.axisTitleSize,
@@ -1208,6 +1390,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
               type="number"
               dataKey="y"
               scale={yLogScale ? 'log' : 'linear'}
+              reversed={invertYAxis}
               domain={getLogSafeDomain(
                 axisRange.yMin === 'auto' ? adjusted1to1Range.yMin : axisRange.yMin,
                 axisRange.yMax === 'auto' ? adjusted1to1Range.yMax : axisRange.yMax,
@@ -1223,6 +1406,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                 value: getAxisTitle(selectedColumns.y!),
                 angle: -90,
                 position: 'insideLeft',
+                offset: yAxisLabelOffset,
                 style: {
                   textAnchor: 'middle',
                   fontSize: styleOptions.axisTitleSize,
@@ -1268,7 +1452,19 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                       strokeColor={plotOptions.strokeColor}
                     />
                   )}
-                />
+                >
+                  {showDataLabels && (
+                    <LabelList
+                      dataKey="type"
+                      position="top"
+                      style={{
+                        fontSize: labelFontSize,
+                        fill: '#333',
+                        fontFamily: styleOptions.fontFamily
+                      }}
+                    />
+                  )}
+                </Scatter>
               )
             })}
 
@@ -1313,6 +1509,8 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
             ))}
           </ScatterChart>
         </ResponsiveContainer>
+          </div>
+        </div>
       </div>
     </div>
   )
