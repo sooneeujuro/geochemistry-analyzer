@@ -259,9 +259,9 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
       // 이미지 크기 정보를 얻기 위해 Image 객체 생성
       const img = new Image()
       img.onload = () => {
-        // 크롭 에디터 열기
+        // 크롭 에디터 열기 (고유 ID 생성)
         setCropEditorImage({
-          id: Date.now().toString(),
+          id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           imageData,
           name: file.name,
           naturalWidth: img.naturalWidth,
