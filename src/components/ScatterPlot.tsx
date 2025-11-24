@@ -127,6 +127,8 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
   const [yNumberFormat, setYNumberFormat] = useState<'normal' | 'scientific' | 'comma'>('normal')
   const [xExponentialFormat, setXExponentialFormat] = useState<'standard' | 'superscript'>('standard')
   const [yExponentialFormat, setYExponentialFormat] = useState<'standard' | 'superscript'>('standard')
+  const [xDecimalPlaces, setXDecimalPlaces] = useState(2) // X축 소수점 자릿수
+  const [yDecimalPlaces, setYDecimalPlaces] = useState(2) // Y축 소수점 자릿수
   const [xAxisLabelOffset, setXAxisLabelOffset] = useState(-50)
   const [yAxisLabelOffset, setYAxisLabelOffset] = useState(-10)
   
@@ -164,6 +166,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
   const [xLogScale, setXLogScale] = useState(false)
   const [yLogScale, setYLogScale] = useState(false)
   const [maintain1to1Ratio, setMaintain1to1Ratio] = useState(false)
+  const [chartAspectRatio, setChartAspectRatio] = useState<number | null>(null) // 차트 가로세로 비율 (null = auto)
   const [xTickInterval, setXTickInterval] = useState<number | 'auto'>('auto')
   const [yTickInterval, setYTickInterval] = useState<number | 'auto'>('auto')
   const [show1to1Line, setShow1to1Line] = useState(false)
@@ -188,6 +191,10 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
   // 크롭 에디터 state
   const [cropEditorOpen, setCropEditorOpen] = useState(false)
   const [cropEditorImage, setCropEditorImage] = useState<{id: string, imageData: string, name: string, naturalWidth: number, naturalHeight: number} | null>(null)
+  const cropImageRef = useRef<HTMLImageElement>(null)
+  const [cropImageLoaded, setCropImageLoaded] = useState(false)
+
+  // ReactCrop state
   const [tempCrop, setTempCrop] = useState<Crop>({
     unit: '%',
     x: 10,
@@ -196,7 +203,9 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
     height: 80
   })
   const [completedCrop, setCompletedCrop] = useState<PixelCrop | null>(null)
-  const cropImageRef = useRef<HTMLImageElement>(null)
+
+  // 키보드 크롭 조정 state
+  const [selectedCorner, setSelectedCorner] = useState<'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight' | null>(null)
 
   // 돋보기 state
   const [magnifierPosition, setMagnifierPosition] = useState<{x: number, y: number} | null>(null)
@@ -258,7 +267,9 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
           naturalWidth: img.naturalWidth,
           naturalHeight: img.naturalHeight
         })
+        setCropImageLoaded(false) // 이미지 로드 상태 리셋
         setCropEditorOpen(true)
+        setSelectedCorner(null) // 모서리 선택 해제
         setTempCrop({
           unit: '%',
           x: 10,
@@ -333,6 +344,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
         setCropEditorOpen(false)
         setCropEditorImage(null)
         setCompletedCrop(null)
+        setCropImageLoaded(false)
 
         if (!ocrResult) {
           alert('⚠️ 자동 축 인식에 실패했습니다. 수동으로 범위를 입력해주세요.')
@@ -359,7 +371,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
 
   // 돋보기 그리기
   const drawMagnifier = (mouseX: number, mouseY: number) => {
-    if (!cropImageRef.current || !magnifierRef.current || !cropEditorImage) return
+    if (!cropImageRef.current || !magnifierRef.current) return
 
     const img = cropImageRef.current
     const canvas = magnifierRef.current
@@ -414,13 +426,6 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
     ctx.stroke()
   }
 
-  // 마우스 이동 핸들러
-  const handleMouseMove = (e: React.MouseEvent) => {
-    const pos = { x: e.clientX, y: e.clientY }
-    setMagnifierPosition(pos)
-    drawMagnifier(e.clientX, e.clientY)
-  }
-
   // 클립보드 이벤트 리스너 등록
   useEffect(() => {
     if (showReferencePanel) {
@@ -431,10 +436,14 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
 
   // 크롭 에디터에서 전역 마우스 이벤트로 돋보기 작동
   useEffect(() => {
-    if (!cropEditorOpen) return
+    if (!cropEditorOpen || !cropImageLoaded) return
 
     const handleGlobalMouseMove = (e: MouseEvent) => {
-      if (!cropImageRef.current) return
+      // 모서리가 선택된 경우 마우스 이벤트 무시 (키보드 모드)
+      if (selectedCorner) return
+
+      if (!cropImageRef.current || !magnifierRef.current) return
+
       const rect = cropImageRef.current.getBoundingClientRect()
 
       // 마우스가 이미지 위에 있는지 확인
@@ -447,9 +456,122 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
       }
     }
 
-    window.addEventListener('mousemove', handleGlobalMouseMove)
-    return () => window.removeEventListener('mousemove', handleGlobalMouseMove)
-  }, [cropEditorOpen, cropEditorImage])
+    document.addEventListener('mousemove', handleGlobalMouseMove, true)
+
+    return () => {
+      document.removeEventListener('mousemove', handleGlobalMouseMove, true)
+    }
+  }, [cropEditorOpen, cropImageLoaded, selectedCorner])
+
+  // 선택된 모서리에 돋보기 고정
+  useEffect(() => {
+    if (!cropEditorOpen || !selectedCorner || !completedCrop || !cropImageRef.current || !magnifierRef.current) {
+      return
+    }
+
+    const img = cropImageRef.current
+    const rect = img.getBoundingClientRect()
+
+    // 모서리 위치 계산 (화면 좌표)
+    let cornerX = 0, cornerY = 0
+
+    switch (selectedCorner) {
+      case 'topLeft':
+        cornerX = rect.left + completedCrop.x
+        cornerY = rect.top + completedCrop.y
+        break
+      case 'topRight':
+        cornerX = rect.left + completedCrop.x + completedCrop.width
+        cornerY = rect.top + completedCrop.y
+        break
+      case 'bottomLeft':
+        cornerX = rect.left + completedCrop.x
+        cornerY = rect.top + completedCrop.y + completedCrop.height
+        break
+      case 'bottomRight':
+        cornerX = rect.left + completedCrop.x + completedCrop.width
+        cornerY = rect.top + completedCrop.y + completedCrop.height
+        break
+    }
+
+    setMagnifierPosition({ x: cornerX, y: cornerY })
+    drawMagnifier(cornerX, cornerY)
+  }, [selectedCorner, completedCrop, cropEditorOpen])
+
+  // 키보드로 크롭 영역 조정
+  useEffect(() => {
+    if (!cropEditorOpen || !selectedCorner || !completedCrop || !cropImageRef.current) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.key) === -1) return
+
+      e.preventDefault()
+
+      const step = e.shiftKey ? 10 : 1 // Shift로 큰 단위 이동
+      const img = cropImageRef.current!
+      const rect = img.getBoundingClientRect()
+
+      const newCrop = { ...completedCrop }
+
+      // 모서리별로 조정
+      switch (selectedCorner) {
+        case 'topLeft':
+          if (e.key === 'ArrowLeft') newCrop.x = Math.max(0, newCrop.x - step)
+          if (e.key === 'ArrowRight') newCrop.x = Math.min(newCrop.x + newCrop.width - 10, newCrop.x + step)
+          if (e.key === 'ArrowUp') newCrop.y = Math.max(0, newCrop.y - step)
+          if (e.key === 'ArrowDown') newCrop.y = Math.min(newCrop.y + newCrop.height - 10, newCrop.y + step)
+          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            const deltaX = newCrop.x - completedCrop.x
+            newCrop.width = completedCrop.width - deltaX
+          }
+          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            const deltaY = newCrop.y - completedCrop.y
+            newCrop.height = completedCrop.height - deltaY
+          }
+          break
+        case 'topRight':
+          if (e.key === 'ArrowLeft') newCrop.width = Math.max(10, newCrop.width - step)
+          if (e.key === 'ArrowRight') newCrop.width = Math.min(rect.width - newCrop.x, newCrop.width + step)
+          if (e.key === 'ArrowUp') newCrop.y = Math.max(0, newCrop.y - step)
+          if (e.key === 'ArrowDown') newCrop.y = Math.min(newCrop.y + newCrop.height - 10, newCrop.y + step)
+          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            const deltaY = newCrop.y - completedCrop.y
+            newCrop.height = completedCrop.height - deltaY
+          }
+          break
+        case 'bottomLeft':
+          if (e.key === 'ArrowLeft') newCrop.x = Math.max(0, newCrop.x - step)
+          if (e.key === 'ArrowRight') newCrop.x = Math.min(newCrop.x + newCrop.width - 10, newCrop.x + step)
+          if (e.key === 'ArrowUp') newCrop.height = Math.max(10, newCrop.height - step)
+          if (e.key === 'ArrowDown') newCrop.height = Math.min(rect.height - newCrop.y, newCrop.height + step)
+          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            const deltaX = newCrop.x - completedCrop.x
+            newCrop.width = completedCrop.width - deltaX
+          }
+          break
+        case 'bottomRight':
+          if (e.key === 'ArrowLeft') newCrop.width = Math.max(10, newCrop.width - step)
+          if (e.key === 'ArrowRight') newCrop.width = Math.min(rect.width - newCrop.x, newCrop.width + step)
+          if (e.key === 'ArrowUp') newCrop.height = Math.max(10, newCrop.height - step)
+          if (e.key === 'ArrowDown') newCrop.height = Math.min(rect.height - newCrop.y, newCrop.height + step)
+          break
+      }
+
+      setCompletedCrop(newCrop)
+
+      // tempCrop도 업데이트 (백분율로 변환)
+      setTempCrop({
+        unit: 'px',
+        x: newCrop.x,
+        y: newCrop.y,
+        width: newCrop.width,
+        height: newCrop.height
+      })
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [cropEditorOpen, selectedCorner, completedCrop])
 
   // 타입 안전한 type 필드 접근
   const getTypeField = () => {
@@ -458,16 +580,6 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
     }
     return null
   }
-
-  // 디버깅 로그
-  console.log('ScatterPlot 데이터:', {
-    statistics,
-    typeStatistics,
-    hasLinearRegression: !!(statistics as any)?.linearRegression,
-    directSlope: (statistics as any)?.slope,
-    directIntercept: (statistics as any)?.intercept,
-    typeField: getTypeField()
-  })
 
   // 차트 데이터 준비
   const chartData = useMemo(() => {
@@ -803,23 +915,21 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
       case 'scientific':
         if (xExponentialFormat === 'superscript') {
           // 10^n 형식으로 변환
-          const exp = value.toExponential(2)
+          const exp = value.toExponential(xDecimalPlaces)
           const match = exp.match(/^(-?\d+\.?\d*)e([+-]?\d+)$/)
           if (match) {
             const coefficient = parseFloat(match[1])
             const exponent = parseInt(match[2])
-            if (coefficient === 1) {
-              return `10${toSuperscript(exponent.toString())}`
-            }
-            return `${coefficient.toFixed(2)}×10${toSuperscript(exponent.toString())}`
+            // 항상 계수를 표시 (1×10⁴ 형식)
+            return `${coefficient.toFixed(xDecimalPlaces)}×10${toSuperscript(exponent.toString())}`
           }
           return exp
         }
-        return value.toExponential(2)
+        return value.toExponential(xDecimalPlaces)
       case 'comma':
-        return value.toLocaleString(undefined, { maximumFractionDigits: 3 })
+        return value.toLocaleString(undefined, { maximumFractionDigits: xDecimalPlaces })
       default:
-        return value.toFixed(3)
+        return value.toFixed(xDecimalPlaces)
     }
   }
 
@@ -830,23 +940,21 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
       case 'scientific':
         if (yExponentialFormat === 'superscript') {
           // 10^n 형식으로 변환
-          const exp = value.toExponential(2)
+          const exp = value.toExponential(yDecimalPlaces)
           const match = exp.match(/^(-?\d+\.?\d*)e([+-]?\d+)$/)
           if (match) {
             const coefficient = parseFloat(match[1])
             const exponent = parseInt(match[2])
-            if (coefficient === 1) {
-              return `10${toSuperscript(exponent.toString())}`
-            }
-            return `${coefficient.toFixed(2)}×10${toSuperscript(exponent.toString())}`
+            // 항상 계수를 표시 (1×10⁴ 형식)
+            return `${coefficient.toFixed(yDecimalPlaces)}×10${toSuperscript(exponent.toString())}`
           }
           return exp
         }
-        return value.toExponential(2)
+        return value.toExponential(yDecimalPlaces)
       case 'comma':
-        return value.toLocaleString(undefined, { maximumFractionDigits: 3 })
+        return value.toLocaleString(undefined, { maximumFractionDigits: yDecimalPlaces })
       default:
-        return value.toFixed(3)
+        return value.toFixed(yDecimalPlaces)
     }
   }
 
@@ -1169,7 +1277,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
           {/* X축 숫자 형식 */}
           <div className="mb-4 pb-4 border-b">
             <h4 className="text-sm font-semibold mb-3 text-blue-700">X축 숫자 형식</h4>
-            <div className="grid grid-cols-2 gap-4">
+            <div className={`grid gap-4 ${xNumberFormat === 'scientific' ? 'grid-cols-3' : 'grid-cols-2'}`}>
               <div>
                 <label className="block text-sm font-medium mb-1">X축 숫자 형식</label>
                 <select
@@ -1195,13 +1303,24 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                   </select>
                 </div>
               )}
+              <div>
+                <label className="block text-sm font-medium mb-1">소수점 자릿수</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="10"
+                  value={xDecimalPlaces}
+                  onChange={(e) => setXDecimalPlaces(parseInt(e.target.value) || 0)}
+                  className="w-full p-2 border rounded-md"
+                />
+              </div>
             </div>
           </div>
 
           {/* Y축 숫자 형식 */}
           <div className="mb-4 pb-4 border-b">
             <h4 className="text-sm font-semibold mb-3 text-green-700">Y축 숫자 형식</h4>
-            <div className="grid grid-cols-2 gap-4">
+            <div className={`grid gap-4 ${yNumberFormat === 'scientific' ? 'grid-cols-3' : 'grid-cols-2'}`}>
               <div>
                 <label className="block text-sm font-medium mb-1">Y축 숫자 형식</label>
                 <select
@@ -1227,6 +1346,17 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                   </select>
                 </div>
               )}
+              <div>
+                <label className="block text-sm font-medium mb-1">소수점 자릿수</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="10"
+                  value={yDecimalPlaces}
+                  onChange={(e) => setYDecimalPlaces(parseInt(e.target.value) || 0)}
+                  className="w-full p-2 border rounded-md"
+                />
+              </div>
             </div>
           </div>
 
@@ -1281,7 +1411,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
           {/* 축 제목 위치 조정 */}
           <div className="col-span-full border-t pt-4 mt-4">
             <h4 className="font-medium mb-3">축 제목 위치 조정</h4>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1">
                   X축 제목 위치 (아래 방향: -, 위 방향: +)
@@ -1930,6 +2060,39 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
               💡 눈금 간격을 비워두면 자동으로 설정됩니다.
             </p>
           </div>
+
+          {/* 그래프 비율 설정 */}
+          <div className="mt-4 pt-4 border-t">
+            <h4 className="font-medium mb-3">그래프 가로세로 비율</h4>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">비율:</label>
+              <input
+                type="number"
+                step="0.1"
+                min="0.1"
+                placeholder="가로/세로 (예: 1.5)"
+                value={chartAspectRatio || ''}
+                onChange={(e) => {
+                  const val = e.target.value
+                  setChartAspectRatio(val === '' ? null : parseFloat(val))
+                }}
+                className="w-32 px-3 py-2 border rounded-md"
+              />
+              <button
+                onClick={() => setChartAspectRatio(null)}
+                className="px-3 py-2 text-sm font-medium bg-gray-100 text-gray-700 rounded hover:bg-gray-200 whitespace-nowrap"
+                title="자동으로 재설정"
+              >
+                자동
+              </button>
+              <span className="text-xs text-gray-500">
+                {chartAspectRatio ? `현재: ${chartAspectRatio.toFixed(2)}` : '자동'}
+              </span>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              💡 레퍼런스 이미지 비율에 맞추려면 이미지 오버레이 패널의 "📐 이미지 비율 적용" 버튼을 사용하세요.
+            </p>
+          </div>
         </div>
       )}
 
@@ -2035,80 +2198,112 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                             <label className="block text-xs font-medium text-gray-600 mb-1">X축 최솟값</label>
                             <input
                               type="number"
-                              value={refImg.xMin}
-                              onChange={(e) => {
-                                const val = parseFloat(e.target.value)
+                              key={`xMin-${refImg.id}`}
+                              defaultValue={refImg.xMin}
+                              onBlur={(e) => {
+                                const numVal = e.target.value === '' ? 0 : parseFloat(e.target.value)
                                 setReferenceImages(prev =>
                                   prev.map(img =>
-                                    img.id === refImg.id ? { ...img, xMin: val } : img
+                                    img.id === refImg.id ? { ...img, xMin: isNaN(numVal) ? 0 : numVal } : img
                                   )
                                 )
                               }}
                               className="w-full px-2 py-1 text-sm border rounded"
-                              step="any"
+                              placeholder="예: -10.5"
                             />
                           </div>
                           <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">X축 최댓값</label>
                             <input
                               type="number"
-                              value={refImg.xMax}
-                              onChange={(e) => {
-                                const val = parseFloat(e.target.value)
+                              key={`xMax-${refImg.id}`}
+                              defaultValue={refImg.xMax}
+                              onBlur={(e) => {
+                                const numVal = e.target.value === '' ? 0 : parseFloat(e.target.value)
                                 setReferenceImages(prev =>
                                   prev.map(img =>
-                                    img.id === refImg.id ? { ...img, xMax: val } : img
+                                    img.id === refImg.id ? { ...img, xMax: isNaN(numVal) ? 0 : numVal } : img
                                   )
                                 )
                               }}
                               className="w-full px-2 py-1 text-sm border rounded"
-                              step="any"
+                              placeholder="예: 100"
                             />
                           </div>
                           <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">Y축 최솟값</label>
                             <input
                               type="number"
-                              value={refImg.yMin}
-                              onChange={(e) => {
-                                const val = parseFloat(e.target.value)
+                              key={`yMin-${refImg.id}`}
+                              defaultValue={refImg.yMin}
+                              onBlur={(e) => {
+                                const numVal = e.target.value === '' ? 0 : parseFloat(e.target.value)
                                 setReferenceImages(prev =>
                                   prev.map(img =>
-                                    img.id === refImg.id ? { ...img, yMin: val } : img
+                                    img.id === refImg.id ? { ...img, yMin: isNaN(numVal) ? 0 : numVal } : img
                                   )
                                 )
                               }}
                               className="w-full px-2 py-1 text-sm border rounded"
-                              step="any"
+                              placeholder="예: 0"
                             />
                           </div>
                           <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">Y축 최댓값</label>
                             <input
                               type="number"
-                              value={refImg.yMax}
-                              onChange={(e) => {
-                                const val = parseFloat(e.target.value)
+                              key={`yMax-${refImg.id}`}
+                              defaultValue={refImg.yMax}
+                              onBlur={(e) => {
+                                const numVal = e.target.value === '' ? 0 : parseFloat(e.target.value)
                                 setReferenceImages(prev =>
                                   prev.map(img =>
-                                    img.id === refImg.id ? { ...img, yMax: val } : img
+                                    img.id === refImg.id ? { ...img, yMax: isNaN(numVal) ? 0 : numVal } : img
                                   )
                                 )
                               }}
                               className="w-full px-2 py-1 text-sm border rounded"
-                              step="any"
+                              placeholder="예: 50"
                             />
                           </div>
                         </div>
 
-                        <p className="text-xs text-gray-500 italic">
-                          💡 음수 입력 시: 숫자를 먼저 입력한 후 맨 앞으로 가서 마이너스(-)를 입력하세요
-                        </p>
+                        {/* 동기화 버튼 */}
+                        <div className="space-y-2 mt-3">
+                          <button
+                            onClick={() => {
+                              // 레퍼런스 이미지의 축 범위를 그래프에 적용
+                              setAxisRange({
+                                xMin: refImg.xMin,
+                                xMax: refImg.xMax,
+                                yMin: refImg.yMin,
+                                yMax: refImg.yMax
+                              })
+                            }}
+                            className="w-full flex items-center justify-center gap-1 px-3 py-2 text-xs font-medium bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
+                          >
+                            🔄 축 범위 동기화
+                          </button>
+                          <button
+                            onClick={() => {
+                              const ratio = refImg.cropWidth / refImg.cropHeight
+                              setChartAspectRatio(ratio)
+                              // maintain1to1Ratio가 켜져 있으면 축 범위가 자동 조정되므로 끄기
+                              if (maintain1to1Ratio) {
+                                setMaintain1to1Ratio(false)
+                              }
+                            }}
+                            className="w-full flex items-center justify-center gap-1 px-3 py-2 text-xs font-medium bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition-colors"
+                            title={`비율: ${(refImg.cropWidth / refImg.cropHeight).toFixed(2)}`}
+                          >
+                            📐 이미지 비율 적용 ({(refImg.cropWidth / refImg.cropHeight).toFixed(2)})
+                          </button>
+                        </div>
 
-                        {/* 투명도 슬라이더 */}
-                        <div>
+                        {/* 불투명도 슬라이더 */}
+                        <div className="mt-3">
                           <label className="flex items-center justify-between text-xs font-medium text-gray-600 mb-1">
-                            <span>투명도</span>
+                            <span>불투명도</span>
                             <span className="text-pink-600">{refImg.opacity}%</span>
                           </label>
                           <input
@@ -2142,7 +2337,10 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
               <li><strong>영역 선택</strong>: 이미지 업로드 후 드래그하여 그래프 영역만 선택하세요</li>
               <li><strong>자동 인식</strong>: 선택한 영역에서 OCR로 축 범위를 자동 인식합니다</li>
               <li><strong>수동 조정</strong>: 인식 실패 시 또는 정확한 조정이 필요할 때 축 범위를 직접 입력하세요</li>
-              <li><strong>투명도</strong>: 슬라이더로 레퍼런스 이미지의 투명도를 조절할 수 있습니다</li>
+              <li><strong>축 범위 동기화</strong>: 현재 그래프의 축 범위를 레퍼런스 이미지에 한 번에 적용합니다</li>
+              <li><strong>이미지 비율 적용</strong>: 크롭한 이미지의 가로세로 비율을 그래프에 자동으로 적용합니다</li>
+              <li><strong>비율 직접 입력</strong>: 원하는 가로세로 비율을 숫자로 입력할 수 있습니다 (예: 1.5)</li>
+              <li><strong>불투명도</strong>: 슬라이더로 레퍼런스 이미지의 불투명도를 조절할 수 있습니다</li>
               <li><strong>비교</strong>: 여러 레퍼런스 이미지를 저장하고 표시/숨김으로 비교 가능합니다</li>
               <li><strong>붙여넣기</strong>: Ctrl+V로 클립보드의 이미지를 빠르게 추가할 수 있습니다</li>
             </ul>
@@ -2155,8 +2353,8 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
         <div className="flex-1 min-w-0">
           <div ref={chartRef} className="w-full p-4" style={{
         backgroundColor: backgroundColor,
-        aspectRatio: maintain1to1Ratio ? '1 / 1' : 'auto',
-        height: maintain1to1Ratio ? 'auto' : '24rem'
+        aspectRatio: chartAspectRatio ? `${chartAspectRatio} / 1` : (maintain1to1Ratio ? '1 / 1' : 'auto'),
+        height: chartAspectRatio || maintain1to1Ratio ? 'auto' : '24rem'
       }}>
         {showChartTitle && chartTitle && (
           <div className="text-center mb-2">
@@ -2166,10 +2364,30 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
           </div>
         )}
         <ResponsiveContainer width="100%" height="100%">
-          <ScatterChart margin={{ top: 20, right: 30, bottom: 60, left: 60 }}>
-            {showGridlines && <CartesianGrid strokeDasharray="3 3" />}
+          <ScatterChart
+            margin={{ top: 20, right: 30, bottom: 60, left: 60 }}
+            animationDuration={500}
+            animationEasing="ease-out"
+          >
+            {/* 1. 배경색 */}
+            <Customized
+              component={(props: any) => {
+                const { width, height, offset } = props
+                if (!width || !height) return null
 
-            {/* 레퍼런스 이미지 오버레이 - 배경에 깔리도록 맨 처음 렌더링 */}
+                return (
+                  <rect
+                    x={0}
+                    y={0}
+                    width={width + (offset?.left || 0) + (offset?.right || 0)}
+                    height={height + (offset?.top || 0) + (offset?.bottom || 0)}
+                    fill={backgroundColor}
+                  />
+                )
+              }}
+            />
+
+            {/* 2. 레퍼런스 이미지 오버레이 */}
             {referenceImages
               .filter(img => img.visible)
               .map(img => {
@@ -2177,7 +2395,13 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                   <Customized
                     key={img.id}
                     component={(props: any) => {
-                      const { xScale, yScale } = props
+                      const { xAxisMap, yAxisMap } = props
+
+                      if (!xAxisMap || !yAxisMap) return null
+
+                      // Recharts는 xAxisMap과 yAxisMap에서 scale을 추출해야 함
+                      const xScale = xAxisMap[0]?.scale
+                      const yScale = yAxisMap[0]?.scale
 
                       if (!xScale || !yScale) return null
 
@@ -2203,6 +2427,9 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                             height={imgHeight}
                             opacity={img.opacity / 100}
                             preserveAspectRatio="none"
+                            style={{
+                              transition: 'all 0.5s ease-out'
+                            }}
                           />
                         </g>
                       )
@@ -2211,6 +2438,10 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                 )
               })}
 
+            {/* 3. 격자 */}
+            {showGridlines && <CartesianGrid strokeDasharray="3 3" />}
+
+            {/* 4. 축 */}
             <XAxis
               type="number"
               dataKey="x"
@@ -2403,6 +2634,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                 onClick={() => {
                   setCropEditorOpen(false)
                   setCropEditorImage(null)
+                  setCropImageLoaded(false)
                 }}
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
               >
@@ -2412,11 +2644,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
 
             {/* 크롭 영역 */}
             <div className="flex-1 overflow-auto p-6">
-              <div
-                className="flex justify-center relative"
-                onMouseMove={handleMouseMove}
-                onMouseLeave={() => setMagnifierPosition(null)}
-              >
+              <div className="flex justify-center relative">
                 <ReactCrop
                   crop={tempCrop}
                   onChange={(c) => setTempCrop(c)}
@@ -2439,39 +2667,95 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                         height: img.height * 0.8
                       }
                       setCompletedCrop(initialCrop)
+                      setCropImageLoaded(true) // 이미지 로드 완료
                     }}
                   />
                 </ReactCrop>
 
-                {/* 돋보기 */}
-                {magnifierPosition && (
-                  <div
+                {/* 돋보기 - 항상 렌더링하여 ref 유지 */}
+                <div
+                  style={{
+                    position: 'fixed',
+                    left: magnifierPosition ? magnifierPosition.x + 20 : -9999,
+                    top: magnifierPosition ? magnifierPosition.y + 20 : -9999,
+                    pointerEvents: 'none',
+                    zIndex: 9999,
+                    visibility: magnifierPosition ? 'visible' : 'hidden'
+                  }}
+                >
+                  <canvas
+                    ref={magnifierRef}
+                    width={120}
+                    height={120}
                     style={{
-                      position: 'fixed',
-                      left: magnifierPosition.x + 20,
-                      top: magnifierPosition.y + 20,
-                      pointerEvents: 'none',
-                      zIndex: 9999
+                      border: '3px solid #333',
+                      borderRadius: '50%',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                      background: 'white'
                     }}
-                  >
-                    <canvas
-                      ref={magnifierRef}
-                      width={120}
-                      height={120}
-                      style={{
-                        border: '3px solid #333',
-                        borderRadius: '50%',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                        background: 'white'
-                      }}
-                    />
-                  </div>
-                )}
+                  />
+                </div>
               </div>
+
+              {/* 모서리 선택 버튼 */}
+              <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                <p className="text-sm font-semibold text-purple-800 mb-3">⌨️ 키보드로 미세 조정</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setSelectedCorner(selectedCorner === 'topLeft' ? null : 'topLeft')}
+                    className={`px-3 py-2 text-sm rounded-lg transition-all ${
+                      selectedCorner === 'topLeft'
+                        ? 'bg-purple-600 text-white font-semibold shadow-lg'
+                        : 'bg-white text-gray-700 border border-purple-300 hover:bg-purple-100'
+                    }`}
+                  >
+                    ↖️ 좌상단
+                  </button>
+                  <button
+                    onClick={() => setSelectedCorner(selectedCorner === 'topRight' ? null : 'topRight')}
+                    className={`px-3 py-2 text-sm rounded-lg transition-all ${
+                      selectedCorner === 'topRight'
+                        ? 'bg-purple-600 text-white font-semibold shadow-lg'
+                        : 'bg-white text-gray-700 border border-purple-300 hover:bg-purple-100'
+                    }`}
+                  >
+                    ↗️ 우상단
+                  </button>
+                  <button
+                    onClick={() => setSelectedCorner(selectedCorner === 'bottomLeft' ? null : 'bottomLeft')}
+                    className={`px-3 py-2 text-sm rounded-lg transition-all ${
+                      selectedCorner === 'bottomLeft'
+                        ? 'bg-purple-600 text-white font-semibold shadow-lg'
+                        : 'bg-white text-gray-700 border border-purple-300 hover:bg-purple-100'
+                    }`}
+                  >
+                    ↙️ 좌하단
+                  </button>
+                  <button
+                    onClick={() => setSelectedCorner(selectedCorner === 'bottomRight' ? null : 'bottomRight')}
+                    className={`px-3 py-2 text-sm rounded-lg transition-all ${
+                      selectedCorner === 'bottomRight'
+                        ? 'bg-purple-600 text-white font-semibold shadow-lg'
+                        : 'bg-white text-gray-700 border border-purple-300 hover:bg-purple-100'
+                    }`}
+                  >
+                    ↘️ 우하단
+                  </button>
+                </div>
+                <p className="text-xs text-purple-700 mt-3">
+                  {selectedCorner
+                    ? `화살표 키(←↑→↓)로 ${selectedCorner === 'topLeft' ? '좌상단' : selectedCorner === 'topRight' ? '우상단' : selectedCorner === 'bottomLeft' ? '좌하단' : '우하단'} 모서리를 조정하세요. Shift를 누르면 더 빠르게 이동합니다.`
+                    : '모서리를 선택한 후 화살표 키로 조정하세요.'}
+                </p>
+              </div>
+
               <div className="mt-4 p-4 bg-blue-50 rounded-lg">
                 <p className="text-sm text-blue-800">
-                  💡 <strong>사용 방법:</strong> 사각형을 드래그하여 이미지에서 그래프 영역만 선택하세요.
-                  모서리를 드래그하여 크기를 조절할 수 있습니다. 마우스를 올리면 확대된 영역을 볼 수 있습니다.
+                  💡 <strong>사용 방법:</strong> 사각형을 드래그하여 대략적으로 선택한 후, 모서리 버튼을 눌러 키보드로 미세 조정하세요.
+                </p>
+                <p className="text-sm text-blue-800 mt-2">
+                  🔍 <strong>돋보기:</strong> 마우스를 이미지 위에 올리면 3배 확대 미리보기가 표시됩니다.
+                  키보드 조정 중에도 계속 작동합니다!
                 </p>
               </div>
             </div>
@@ -2482,6 +2766,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                 onClick={() => {
                   setCropEditorOpen(false)
                   setCropEditorImage(null)
+                  setCropImageLoaded(false)
                 }}
                 className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
               >
