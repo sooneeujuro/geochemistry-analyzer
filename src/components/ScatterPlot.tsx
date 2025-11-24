@@ -280,9 +280,9 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
   const currentRange = useVisibleDataRange ? visibleDataRange : fullDataRange
 
   // 로그 스케일을 위한 안전한 domain 계산
-  const getLogSafeDomain = (min: number | 'auto', max: number | 'auto', isLog: boolean) => {
+  const getLogSafeDomain = (min: number | 'auto', max: number | 'auto', isLog: boolean): [number, number] | 'auto' => {
     if (min === 'auto' || max === 'auto') {
-      return [min, max]
+      return 'auto'
     }
 
     if (isLog) {
