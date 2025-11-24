@@ -197,6 +197,10 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
   })
   const cropImageRef = useRef<HTMLImageElement>(null)
 
+  // 돋보기 state
+  const [magnifierPosition, setMagnifierPosition] = useState<{x: number, y: number} | null>(null)
+  const magnifierRef = useRef<HTMLCanvasElement>(null)
+
   // 오차범위 설정
   const [xErrorBarEnabled, setXErrorBarEnabled] = useState(false)
   const [xErrorBarMode, setXErrorBarMode] = useState<'column' | 'percentage' | 'fixed' | 'stddev' | 'stderr'>('percentage')
@@ -345,6 +349,70 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
         }
       }
     }
+  }
+
+  // 돋보기 그리기
+  const drawMagnifier = (mouseX: number, mouseY: number) => {
+    if (!cropImageRef.current || !magnifierRef.current || !cropEditorImage) return
+
+    const img = cropImageRef.current
+    const canvas = magnifierRef.current
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    // 돋보기 설정
+    const magnifierSize = 120 // 돋보기 크기
+    const zoomLevel = 3 // 확대 배율
+
+    canvas.width = magnifierSize
+    canvas.height = magnifierSize
+
+    // 이미지에서의 실제 위치 계산
+    const rect = img.getBoundingClientRect()
+    const scaleX = img.naturalWidth / rect.width
+    const scaleY = img.naturalHeight / rect.height
+    const imgX = (mouseX - rect.left) * scaleX
+    const imgY = (mouseY - rect.top) * scaleY
+
+    // 확대할 영역 크기
+    const sourceSize = magnifierSize / zoomLevel
+
+    // 돋보기에 이미지 그리기
+    ctx.drawImage(
+      img,
+      imgX - sourceSize / 2, // source x
+      imgY - sourceSize / 2, // source y
+      sourceSize, // source width
+      sourceSize, // source height
+      0, // dest x
+      0, // dest y
+      magnifierSize, // dest width
+      magnifierSize // dest height
+    )
+
+    // 십자선 그리기
+    ctx.strokeStyle = '#ff00ff'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(magnifierSize / 2, 0)
+    ctx.lineTo(magnifierSize / 2, magnifierSize)
+    ctx.moveTo(0, magnifierSize / 2)
+    ctx.lineTo(magnifierSize, magnifierSize / 2)
+    ctx.stroke()
+
+    // 원형 테두리
+    ctx.strokeStyle = '#333'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.arc(magnifierSize / 2, magnifierSize / 2, magnifierSize / 2 - 1, 0, Math.PI * 2)
+    ctx.stroke()
+  }
+
+  // 마우스 이동 핸들러
+  const handleMouseMove = (e: React.MouseEvent) => {
+    const pos = { x: e.clientX, y: e.clientY }
+    setMagnifierPosition(pos)
+    drawMagnifier(e.clientX, e.clientY)
   }
 
   // 클립보드 이벤트 리스너 등록
@@ -2069,6 +2137,48 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
           <ScatterChart margin={{ top: 20, right: 30, bottom: 60, left: 60 }}>
             {showGridlines && <CartesianGrid strokeDasharray="3 3" />}
 
+            {/* 레퍼런스 이미지 오버레이 - 배경에 깔리도록 맨 처음 렌더링 */}
+            {referenceImages
+              .filter(img => img.visible)
+              .map(img => {
+                return (
+                  <Customized
+                    key={img.id}
+                    component={(props: any) => {
+                      const { xScale, yScale } = props
+
+                      if (!xScale || !yScale) return null
+
+                      // 이미지의 축 범위를 픽셀 좌표로 변환
+                      const x1 = xScale(img.xMin)
+                      const x2 = xScale(img.xMax)
+                      const y1 = yScale(img.yMax) // Y축은 반대 방향
+                      const y2 = yScale(img.yMin)
+
+                      // 로그 스케일 처리
+                      const imgX = Math.min(x1, x2)
+                      const imgY = Math.min(y1, y2)
+                      const imgWidth = Math.abs(x2 - x1)
+                      const imgHeight = Math.abs(y2 - y1)
+
+                      return (
+                        <g>
+                          <image
+                            href={img.imageData}
+                            x={imgX}
+                            y={imgY}
+                            width={imgWidth}
+                            height={imgHeight}
+                            opacity={img.opacity / 100}
+                            preserveAspectRatio="none"
+                          />
+                        </g>
+                      )
+                    }}
+                  />
+                )
+              })}
+
             <XAxis
               type="number"
               dataKey="x"
@@ -2238,55 +2348,6 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                 strokeDasharray="5 5"
               />
             ))}
-
-            {/* 레퍼런스 이미지 오버레이 */}
-            {referenceImages
-              .filter(img => img.visible)
-              .map(img => {
-                // Recharts Customized 컴포넌트를 사용하여 이미지 렌더링
-                return (
-                  <Customized
-                    key={img.id}
-                    component={(props: any) => {
-                      const { xScale, yScale, width, height, offset } = props
-
-                      if (!xScale || !yScale) return null
-
-                      // 이미지의 축 범위를 픽셀 좌표로 변환
-                      const x1 = xScale(img.xMin)
-                      const x2 = xScale(img.xMax)
-                      const y1 = yScale(img.yMax) // Y축은 반대 방향
-                      const y2 = yScale(img.yMin)
-
-                      // 로그 스케일 처리
-                      const imgX = Math.min(x1, x2)
-                      const imgY = Math.min(y1, y2)
-                      const imgWidth = Math.abs(x2 - x1)
-                      const imgHeight = Math.abs(y2 - y1)
-
-                      return (
-                        <g>
-                          <defs>
-                            <clipPath id={`clip-${img.id}`}>
-                              <rect x={imgX} y={imgY} width={imgWidth} height={imgHeight} />
-                            </clipPath>
-                          </defs>
-                          <image
-                            href={img.imageData}
-                            x={imgX}
-                            y={imgY}
-                            width={imgWidth}
-                            height={imgHeight}
-                            opacity={img.opacity / 100}
-                            preserveAspectRatio="none"
-                            clipPath={`url(#clip-${img.id})`}
-                          />
-                        </g>
-                      )
-                    }}
-                  />
-                )
-              })}
           </ScatterChart>
         </ResponsiveContainer>
           </div>
@@ -2319,7 +2380,11 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
 
             {/* 크롭 영역 */}
             <div className="flex-1 overflow-auto p-6">
-              <div className="flex justify-center">
+              <div
+                className="flex justify-center relative"
+                onMouseMove={handleMouseMove}
+                onMouseLeave={() => setMagnifierPosition(null)}
+              >
                 <ReactCrop
                   crop={tempCrop}
                   onChange={(c) => setTempCrop(c)}
@@ -2332,11 +2397,36 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                     style={{ maxWidth: '100%', maxHeight: '60vh' }}
                   />
                 </ReactCrop>
+
+                {/* 돋보기 */}
+                {magnifierPosition && (
+                  <div
+                    style={{
+                      position: 'fixed',
+                      left: magnifierPosition.x + 20,
+                      top: magnifierPosition.y + 20,
+                      pointerEvents: 'none',
+                      zIndex: 9999
+                    }}
+                  >
+                    <canvas
+                      ref={magnifierRef}
+                      width={120}
+                      height={120}
+                      style={{
+                        border: '3px solid #333',
+                        borderRadius: '50%',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                        background: 'white'
+                      }}
+                    />
+                  </div>
+                )}
               </div>
               <div className="mt-4 p-4 bg-blue-50 rounded-lg">
                 <p className="text-sm text-blue-800">
                   💡 <strong>사용 방법:</strong> 사각형을 드래그하여 이미지에서 그래프 영역만 선택하세요.
-                  모서리를 드래그하여 크기를 조절할 수 있습니다.
+                  모서리를 드래그하여 크기를 조절할 수 있습니다. 마우스를 올리면 확대된 영역을 볼 수 있습니다.
                 </p>
               </div>
             </div>
