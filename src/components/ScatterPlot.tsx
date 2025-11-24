@@ -195,6 +195,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
     width: 80,
     height: 80
   })
+  const [completedCrop, setCompletedCrop] = useState<PixelCrop | null>(null)
   const cropImageRef = useRef<HTMLImageElement>(null)
 
   // 돋보기 state
@@ -273,15 +274,19 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
 
   // 크롭 확인 후 레퍼런스 이미지 추가
   const handleCropConfirm = async () => {
-    if (!cropEditorImage || !cropImageRef.current) return
+    if (!cropEditorImage || !cropImageRef.current || !completedCrop) return
 
     const image = cropImageRef.current
 
-    // 퍼센트를 픽셀로 변환
-    const cropX = (tempCrop.x / 100) * cropEditorImage.naturalWidth
-    const cropY = (tempCrop.y / 100) * cropEditorImage.naturalHeight
-    const cropWidth = (tempCrop.width / 100) * cropEditorImage.naturalWidth
-    const cropHeight = (tempCrop.height / 100) * cropEditorImage.naturalHeight
+    // 화면에 표시된 이미지 크기
+    const scaleX = cropEditorImage.naturalWidth / image.width
+    const scaleY = cropEditorImage.naturalHeight / image.height
+
+    // 픽셀 크롭 좌표를 원본 이미지 좌표로 변환
+    const cropX = completedCrop.x * scaleX
+    const cropY = completedCrop.y * scaleY
+    const cropWidth = completedCrop.width * scaleX
+    const cropHeight = completedCrop.height * scaleY
 
     // 캔버스로 크롭된 이미지 추출
     const canvas = document.createElement('canvas')
@@ -327,6 +332,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
         setReferenceImages(prev => [...prev, newImage])
         setCropEditorOpen(false)
         setCropEditorImage(null)
+        setCompletedCrop(null)
 
         if (!ocrResult) {
           alert('⚠️ 자동 축 인식에 실패했습니다. 수동으로 범위를 입력해주세요.')
@@ -422,6 +428,28 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
       return () => window.removeEventListener('paste', handlePaste as any)
     }
   }, [showReferencePanel])
+
+  // 크롭 에디터에서 전역 마우스 이벤트로 돋보기 작동
+  useEffect(() => {
+    if (!cropEditorOpen) return
+
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      if (!cropImageRef.current) return
+      const rect = cropImageRef.current.getBoundingClientRect()
+
+      // 마우스가 이미지 위에 있는지 확인
+      if (e.clientX >= rect.left && e.clientX <= rect.right &&
+          e.clientY >= rect.top && e.clientY <= rect.bottom) {
+        setMagnifierPosition({ x: e.clientX, y: e.clientY })
+        drawMagnifier(e.clientX, e.clientY)
+      } else {
+        setMagnifierPosition(null)
+      }
+    }
+
+    window.addEventListener('mousemove', handleGlobalMouseMove)
+    return () => window.removeEventListener('mousemove', handleGlobalMouseMove)
+  }, [cropEditorOpen, cropEditorImage])
 
   // 타입 안전한 type 필드 접근
   const getTypeField = () => {
@@ -2073,6 +2101,10 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                           </div>
                         </div>
 
+                        <p className="text-xs text-gray-500 italic">
+                          💡 음수 입력 시: 숫자를 먼저 입력한 후 맨 앞으로 가서 마이너스(-)를 입력하세요
+                        </p>
+
                         {/* 투명도 슬라이더 */}
                         <div>
                           <label className="flex items-center justify-between text-xs font-medium text-gray-600 mb-1">
@@ -2388,6 +2420,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                 <ReactCrop
                   crop={tempCrop}
                   onChange={(c) => setTempCrop(c)}
+                  onComplete={(c) => setCompletedCrop(c)}
                   aspect={undefined}
                 >
                   <img
@@ -2395,6 +2428,18 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                     src={cropEditorImage.imageData}
                     alt="Crop preview"
                     style={{ maxWidth: '100%', maxHeight: '60vh' }}
+                    onLoad={(e) => {
+                      // 이미지 로드 시 초기 크롭 설정
+                      const img = e.currentTarget
+                      const initialCrop: PixelCrop = {
+                        unit: 'px',
+                        x: img.width * 0.1,
+                        y: img.height * 0.1,
+                        width: img.width * 0.8,
+                        height: img.height * 0.8
+                      }
+                      setCompletedCrop(initialCrop)
+                    }}
                   />
                 </ReactCrop>
 
