@@ -7,7 +7,8 @@ import AnalysisPanel from '@/components/AnalysisPanel'
 import ScanMode from '@/components/ScanMode'
 import ChatInterface from '@/components/ChatInterface'
 import { GeochemData, ColumnSelection, ScanResult, ScanSummary } from '@/types/geochem'
-import { BarChart3, Scan, ArrowLeft, MessageCircle } from 'lucide-react'
+import { BarChart3, Scan, ArrowLeft, MessageCircle, BookOpen } from 'lucide-react'
+import Link from 'next/link'
 
 export default function Home() {
   const [data, setData] = useState<GeochemData | null>(null)
@@ -166,14 +167,23 @@ export default function Home() {
             </div>
           )}
           
-          <h1 className="text-4xl font-bold text-gray-800 mb-2">
-            지구화학 데이터 분석기
-          </h1>
+          <div className="flex items-center justify-center gap-4 mb-2">
+            <h1 className="text-4xl font-bold text-gray-800">
+              지구화학 데이터 분석기
+            </h1>
+            <Link
+              href="/docs"
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 shadow-lg hover:shadow-xl transition-all transform hover:scale-105"
+            >
+              <BookOpen className="w-5 h-5" />
+              <span className="font-semibold">사용 가이드</span>
+            </Link>
+          </div>
           <p className="text-gray-600">
             Excel/CSV 파일을 업로드하여 지구화학 데이터를 분석하고 시각화하세요
           </p>
           <p className="text-sm text-gray-500 mt-2">
-            ✨ 새 기능: 비율 계산 (SiO2/Al2O3 등) 및 타입 분류 옵션
+            ✨ 새 기능: 오차범위 표시 (백분율/고정값/컬럼/표준편차/표준오차)
           </p>
           
           {/* 모드 선택 버튼 */}
