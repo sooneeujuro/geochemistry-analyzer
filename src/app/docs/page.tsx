@@ -16,6 +16,27 @@ export default function DocsPage() {
   const [content, setContent] = useState<string>('')
   const [loading, setLoading] = useState(true)
 
+  // 해시 링크 스크롤 처리
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash
+      if (hash) {
+        const id = hash.substring(1) // # 제거
+        const element = document.getElementById(id)
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+      }
+    }
+
+    // 초기 로드 시 해시 확인
+    handleHashChange()
+
+    // 해시 변경 이벤트 리스너
+    window.addEventListener('hashchange', handleHashChange)
+    return () => window.removeEventListener('hashchange', handleHashChange)
+  }, [content]) // content 변경 시에도 실행
+
   useEffect(() => {
     const fetchDoc = async () => {
       setLoading(true)
@@ -176,9 +197,29 @@ export default function DocsPage() {
                     <pre className="bg-gray-900 rounded-lg overflow-hidden my-4" {...props} />
                   ),
                   // 링크 스타일
-                  a: ({ node, ...props }) => (
-                    <a className="text-blue-600 hover:text-blue-800 underline decoration-2 decoration-blue-300 hover:decoration-blue-600 transition-colors" {...props} />
-                  ),
+                  a: ({ node, href, ...props }) => {
+                    // 내부 해시 링크인 경우 스크롤 처리
+                    const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+                      if (href?.startsWith('#')) {
+                        e.preventDefault()
+                        const id = href.substring(1)
+                        const element = document.getElementById(id)
+                        if (element) {
+                          element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                          window.history.pushState(null, '', href)
+                        }
+                      }
+                    }
+
+                    return (
+                      <a
+                        href={href}
+                        onClick={handleClick}
+                        className="text-blue-600 hover:text-blue-800 underline decoration-2 decoration-blue-300 hover:decoration-blue-600 transition-colors cursor-pointer"
+                        {...props}
+                      />
+                    )
+                  },
                   // 인용구
                   blockquote: ({ node, ...props }) => (
                     <blockquote className="border-l-4 border-yellow-400 bg-yellow-50 pl-4 py-2 my-4 italic text-gray-700" {...props} />
