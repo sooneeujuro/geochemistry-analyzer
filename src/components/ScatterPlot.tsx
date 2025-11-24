@@ -2364,11 +2364,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
           </div>
         )}
         <ResponsiveContainer width="100%" height="100%">
-          <ScatterChart
-            margin={{ top: 20, right: 30, bottom: 60, left: 60 }}
-            animationDuration={500}
-            animationEasing="ease-out"
-          >
+          <ScatterChart margin={{ top: 20, right: 30, bottom: 60, left: 60 }}>
             {/* 1. 배경색 */}
             <Customized
               component={(props: any) => {
