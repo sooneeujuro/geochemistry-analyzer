@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 import rehypeSanitize from 'rehype-sanitize'
+import rehypeSlug from 'rehype-slug'
 import { ArrowLeft, BookOpen, FileText, History } from 'lucide-react'
 import Link from 'next/link'
 
@@ -138,7 +139,7 @@ export default function DocsPage() {
             <div className="prose prose-slate max-w-none p-8 lg:p-12">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeRaw, rehypeSanitize]}
+                rehypePlugins={[rehypeSlug, rehypeRaw, rehypeSanitize]}
                 components={{
                   // 헤딩 스타일
                   h1: ({ node, ...props }) => (
