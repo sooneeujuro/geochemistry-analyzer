@@ -239,7 +239,8 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
         case 'column':
           // 컬럼에서 직접 읽기
           return data.map(d => {
-            const errorValue = d[column] ? parseFloat(d[column] as any) : 0
+            const dataRecord = d as any
+            const errorValue = dataRecord[column] ? parseFloat(dataRecord[column]) : 0
             return isNaN(errorValue) ? 0 : Math.abs(errorValue)
           })
         case 'percentage':
