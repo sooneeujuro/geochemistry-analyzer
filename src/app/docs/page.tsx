@@ -21,11 +21,20 @@ export default function DocsPage() {
     const handleHashChange = () => {
       const hash = window.location.hash
       if (hash) {
-        const id = hash.substring(1) // # 제거
-        const element = document.getElementById(id)
-        if (element) {
-          element.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        }
+        // DOM 렌더링 후 스크롤 (타이밍 이슈 해결)
+        setTimeout(() => {
+          let id = hash.substring(1) // # 제거
+          // URL 디코딩 (한글 처리)
+          try {
+            id = decodeURIComponent(id)
+          } catch (e) {
+            console.error('Failed to decode URI:', e)
+          }
+          const element = document.getElementById(id)
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          }
+        }, 100)
       }
     }
 
@@ -202,12 +211,25 @@ export default function DocsPage() {
                     const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
                       if (href?.startsWith('#')) {
                         e.preventDefault()
-                        const id = href.substring(1)
-                        const element = document.getElementById(id)
-                        if (element) {
-                          element.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                          window.history.pushState(null, '', href)
-                        }
+                        let id = href.substring(1)
+
+                        // DOM 렌더링 후 스크롤 (타이밍 이슈 해결)
+                        setTimeout(() => {
+                          // URL 디코딩 (한글 처리)
+                          try {
+                            id = decodeURIComponent(id)
+                          } catch (e) {
+                            console.error('Failed to decode URI:', e)
+                          }
+
+                          const element = document.getElementById(id)
+                          if (element) {
+                            element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                            window.history.pushState(null, '', href)
+                          } else {
+                            console.log('Element not found:', id)
+                          }
+                        }, 100)
                       }
                     }
 
