@@ -11,7 +11,7 @@ import Link from 'next/link'
 type DocType = 'features' | 'changelog' | 'readme'
 
 export default function DocsPage() {
-  const [activeDoc, setActiveDoc] = useState<DocType>('features')
+  const [activeDoc, setActiveDoc] = useState<DocType>('readme')
   const [content, setContent] = useState<string>('')
   const [loading, setLoading] = useState(true)
 
@@ -28,7 +28,7 @@ export default function DocsPage() {
             filename = 'CHANGELOG.md'
             break
           case 'readme':
-            filename = 'README.md'
+            filename = 'INTRO.md'
             break
         }
 
@@ -48,6 +48,12 @@ export default function DocsPage() {
 
   const tabs: Array<{ id: DocType; label: string; icon: any; description: string }> = [
     {
+      id: 'readme',
+      label: '시작하기',
+      icon: FileText,
+      description: '빠른 시작 및 사용 가이드'
+    },
+    {
       id: 'features',
       label: '기능 가이드',
       icon: BookOpen,
@@ -58,12 +64,6 @@ export default function DocsPage() {
       label: '변경 이력',
       icon: History,
       description: '버전별 업데이트 내역'
-    },
-    {
-      id: 'readme',
-      label: '프로젝트 소개',
-      icon: FileText,
-      description: '프로젝트 개요 및 시작하기'
     }
   ]
 
