@@ -21,6 +21,7 @@
     "pca-js": "^1.0.2",
     "react": "^18",
     "react-dom": "^18",
+    "react-image-crop": "^11.0.10",
     "react-markdown": "^10.1.0",
     "recharts": "^2.8.0",
     "rehype-raw": "^7.0.0",

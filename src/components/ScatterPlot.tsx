@@ -3,9 +3,11 @@
 import { useMemo, useState, useEffect, useRef } from 'react'
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell, LabelList, ErrorBar, Customized } from 'recharts'
 import { GeochemData, StatisticalResult, ColumnSelection, ChartStyleOptions, PlotStyleOptions } from '@/types/geochem'
-import { Settings, Palette, Move3D, Download, Shapes, Eye, EyeOff, ZoomIn, ZoomOut, TrendingUp, TrendingDown, AlertTriangle, Image as ImageIcon, Upload, Trash2, Eye as EyeIcon } from 'lucide-react'
+import { Settings, Palette, Move3D, Download, Shapes, Eye, EyeOff, ZoomIn, ZoomOut, TrendingUp, TrendingDown, AlertTriangle, Image as ImageIcon, Upload, Trash2, Eye as EyeIcon, Crop as CropIcon, Check, X } from 'lucide-react'
 import { standardDeviation } from 'simple-statistics'
 import { createWorker } from 'tesseract.js'
+import ReactCrop, { Crop, PixelCrop } from 'react-image-crop'
+import 'react-image-crop/dist/ReactCrop.css'
 
 interface ScatterPlotProps {
   data: GeochemData
@@ -38,6 +40,15 @@ interface ReferenceImage {
   id: string
   name: string
   imageData: string // base64
+  // 이미지 크기 정보
+  naturalWidth: number
+  naturalHeight: number
+  // 크롭 영역 (이미지 내 그래프 영역, 픽셀 좌표)
+  cropX: number
+  cropY: number
+  cropWidth: number
+  cropHeight: number
+  // 차트 축 범위 (데이터 값)
   xMin: number
   xMax: number
   yMin: number
@@ -174,6 +185,18 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
   const [ocrProcessing, setOcrProcessing] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // 크롭 에디터 state
+  const [cropEditorOpen, setCropEditorOpen] = useState(false)
+  const [cropEditorImage, setCropEditorImage] = useState<{id: string, imageData: string, name: string, naturalWidth: number, naturalHeight: number} | null>(null)
+  const [tempCrop, setTempCrop] = useState<Crop>({
+    unit: '%',
+    x: 10,
+    y: 10,
+    width: 80,
+    height: 80
+  })
+  const cropImageRef = useRef<HTMLImageElement>(null)
+
   // 오차범위 설정
   const [xErrorBarEnabled, setXErrorBarEnabled] = useState(false)
   const [xErrorBarMode, setXErrorBarMode] = useState<'column' | 'percentage' | 'fixed' | 'stddev' | 'stderr'>('percentage')
@@ -216,31 +239,97 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
   // 이미지 파일 처리
   const handleImageUpload = async (file: File) => {
     const reader = new FileReader()
-    reader.onload = async (e) => {
+    reader.onload = (e) => {
       const imageData = e.target?.result as string
 
-      // OCR 시도
-      const ocrResult = await processImageWithOCR(imageData)
-
-      const newImage: ReferenceImage = {
-        id: Date.now().toString(),
-        name: file.name,
-        imageData,
-        xMin: ocrResult?.xMin || 0,
-        xMax: ocrResult?.xMax || 100,
-        yMin: ocrResult?.yMin || 0,
-        yMax: ocrResult?.yMax || 100,
-        opacity: 30,
-        visible: true
+      // 이미지 크기 정보를 얻기 위해 Image 객체 생성
+      const img = new Image()
+      img.onload = () => {
+        // 크롭 에디터 열기
+        setCropEditorImage({
+          id: Date.now().toString(),
+          imageData,
+          name: file.name,
+          naturalWidth: img.naturalWidth,
+          naturalHeight: img.naturalHeight
+        })
+        setCropEditorOpen(true)
+        setTempCrop({
+          unit: '%',
+          x: 10,
+          y: 10,
+          width: 80,
+          height: 80
+        })
       }
-
-      setReferenceImages(prev => [...prev, newImage])
-
-      if (!ocrResult) {
-        alert('⚠️ 자동 축 인식에 실패했습니다. 수동으로 범위를 입력해주세요.')
-      }
+      img.src = imageData
     }
     reader.readAsDataURL(file)
+  }
+
+  // 크롭 확인 후 레퍼런스 이미지 추가
+  const handleCropConfirm = async () => {
+    if (!cropEditorImage || !cropImageRef.current) return
+
+    const image = cropImageRef.current
+
+    // 퍼센트를 픽셀로 변환
+    const cropX = (tempCrop.x / 100) * cropEditorImage.naturalWidth
+    const cropY = (tempCrop.y / 100) * cropEditorImage.naturalHeight
+    const cropWidth = (tempCrop.width / 100) * cropEditorImage.naturalWidth
+    const cropHeight = (tempCrop.height / 100) * cropEditorImage.naturalHeight
+
+    // 캔버스로 크롭된 이미지 추출
+    const canvas = document.createElement('canvas')
+    canvas.width = cropWidth
+    canvas.height = cropHeight
+    const ctx = canvas.getContext('2d')
+
+    if (ctx) {
+      // 원본 이미지를 로드
+      const img = new Image()
+      img.onload = async () => {
+        // 크롭된 부분만 캔버스에 그리기
+        ctx.drawImage(
+          img,
+          cropX, cropY, cropWidth, cropHeight, // 소스 영역
+          0, 0, cropWidth, cropHeight // 대상 영역
+        )
+
+        // 크롭된 이미지를 base64로 변환
+        const croppedImageData = canvas.toDataURL('image/png')
+
+        // 크롭된 영역에서 OCR 시도 (선택적)
+        const ocrResult = await processImageWithOCR(croppedImageData)
+
+        const newImage: ReferenceImage = {
+          id: cropEditorImage.id,
+          name: cropEditorImage.name,
+          imageData: croppedImageData, // 크롭된 이미지 사용
+          naturalWidth: cropWidth,
+          naturalHeight: cropHeight,
+          cropX: 0, // 크롭된 이미지는 전체 영역 사용
+          cropY: 0,
+          cropWidth: cropWidth,
+          cropHeight: cropHeight,
+          xMin: ocrResult?.xMin || 0,
+          xMax: ocrResult?.xMax || 100,
+          yMin: ocrResult?.yMin || 0,
+          yMax: ocrResult?.yMax || 100,
+          opacity: 30,
+          visible: true
+        }
+
+        setReferenceImages(prev => [...prev, newImage])
+        setCropEditorOpen(false)
+        setCropEditorImage(null)
+
+        if (!ocrResult) {
+          alert('⚠️ 자동 축 인식에 실패했습니다. 수동으로 범위를 입력해주세요.')
+        }
+      }
+      img.src = cropEditorImage.imageData
+    }
   }
 
   // 클립보드 이미지 처리
@@ -1950,8 +2039,9 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
           <div className="mt-6 pt-6 border-t border-pink-200">
             <h4 className="text-sm font-semibold mb-2">💡 레퍼런스 이미지 사용 팁</h4>
             <ul className="text-xs text-gray-600 space-y-1">
-              <li><strong>자동 인식</strong>: 업로드 시 OCR로 축 범위를 자동 인식합니다</li>
-              <li><strong>수동 조정</strong>: 인식 실패 시 또는 정확한 조정이 필요할 때 직접 입력하세요</li>
+              <li><strong>영역 선택</strong>: 이미지 업로드 후 드래그하여 그래프 영역만 선택하세요</li>
+              <li><strong>자동 인식</strong>: 선택한 영역에서 OCR로 축 범위를 자동 인식합니다</li>
+              <li><strong>수동 조정</strong>: 인식 실패 시 또는 정확한 조정이 필요할 때 축 범위를 직접 입력하세요</li>
               <li><strong>투명도</strong>: 슬라이더로 레퍼런스 이미지의 투명도를 조절할 수 있습니다</li>
               <li><strong>비교</strong>: 여러 레퍼런스 이미지를 저장하고 표시/숨김으로 비교 가능합니다</li>
               <li><strong>붙여넣기</strong>: Ctrl+V로 클립보드의 이미지를 빠르게 추가할 수 있습니다</li>
@@ -2202,6 +2292,77 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
           </div>
         </div>
       </div>
+
+      {/* 크롭 에디터 모달 */}
+      {cropEditorOpen && cropEditorImage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75">
+          <div className="bg-white rounded-lg shadow-2xl max-w-5xl max-h-[90vh] w-full mx-4 flex flex-col">
+            {/* 모달 헤더 */}
+            <div className="flex items-center justify-between p-4 border-b">
+              <div className="flex items-center gap-3">
+                <CropIcon className="w-6 h-6 text-pink-600" />
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">그래프 영역 선택</h3>
+                  <p className="text-sm text-gray-600">{cropEditorImage.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setCropEditorOpen(false)
+                  setCropEditorImage(null)
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* 크롭 영역 */}
+            <div className="flex-1 overflow-auto p-6">
+              <div className="flex justify-center">
+                <ReactCrop
+                  crop={tempCrop}
+                  onChange={(c) => setTempCrop(c)}
+                  aspect={undefined}
+                >
+                  <img
+                    ref={cropImageRef}
+                    src={cropEditorImage.imageData}
+                    alt="Crop preview"
+                    style={{ maxWidth: '100%', maxHeight: '60vh' }}
+                  />
+                </ReactCrop>
+              </div>
+              <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+                <p className="text-sm text-blue-800">
+                  💡 <strong>사용 방법:</strong> 사각형을 드래그하여 이미지에서 그래프 영역만 선택하세요.
+                  모서리를 드래그하여 크기를 조절할 수 있습니다.
+                </p>
+              </div>
+            </div>
+
+            {/* 모달 푸터 */}
+            <div className="flex items-center justify-end gap-3 p-4 border-t">
+              <button
+                onClick={() => {
+                  setCropEditorOpen(false)
+                  setCropEditorImage(null)
+                }}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleCropConfirm}
+                className="flex items-center gap-2 px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition-colors"
+              >
+                <Check className="w-4 h-4" />
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
