@@ -52,6 +52,7 @@
 - 레퍼런스 이미지가 차트에 표시되지 않던 문제 수정 (Recharts xAxisMap/yAxisMap 접근 방식 개선)
 - 크롭 영역 선택 시 실제 선택 영역과 캡처 영역이 다르던 문제 수정 (scaleX/scaleY 계산)
 - 음수 입력 시 마이너스 기호를 먼저 입력할 수 없던 문제 수정 (uncontrolled input + type="number")
+- **SVG 내보내기 Illustrator 호환성**: xlink:href 네임스페이스 추가로 Adobe Illustrator에서 레퍼런스 이미지 정상 표시
 
 ---
 

@@ -1062,28 +1062,57 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
     if (!chartRef.current) return
 
     try {
-      // Recharts가 생성한 SVG 요소 찾기
       const svgElement = chartRef.current.querySelector('svg')
       if (!svgElement) {
         alert('SVG를 찾을 수 없습니다.')
         return
       }
 
-      // SVG를 복제
       const clonedSvg = svgElement.cloneNode(true) as SVGElement
 
-      // 배경색을 rect로 추가
+      // 배경색 추가
       const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
       bgRect.setAttribute('width', '100%')
       bgRect.setAttribute('height', '100%')
       bgRect.setAttribute('fill', backgroundColor)
       clonedSvg.insertBefore(bgRect, clonedSvg.firstChild)
 
-      // SVG를 문자열로 변환
-      const serializer = new XMLSerializer()
-      const svgString = serializer.serializeToString(clonedSvg)
+      // 인라인 스타일 중 transition 제거 (SVG에 불필요)
+      const allElements = clonedSvg.querySelectorAll('*')
+      allElements.forEach((el) => {
+        const style = el.getAttribute('style')
+        if (style && style.includes('transition')) {
+          const cleanStyle = style.replace(/transition[^;]*;?/g, '').trim()
+          if (cleanStyle) {
+            el.setAttribute('style', cleanStyle)
+          } else {
+            el.removeAttribute('style')
+          }
+        }
+      })
 
-      // Blob 생성 및 다운로드
+      // SVG 문자열 생성
+      const serializer = new XMLSerializer()
+      let svgString = serializer.serializeToString(clonedSvg)
+
+      // Illustrator 호환성을 위한 문자열 수정
+      // 1. xmlns:xlink 네임스페이스 추가 (중복 방지)
+      if (!svgString.includes('xmlns:xlink')) {
+        if (svgString.includes('xmlns="http://www.w3.org/2000/svg"')) {
+          svgString = svgString.replace(
+            'xmlns="http://www.w3.org/2000/svg"',
+            'xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1"'
+          )
+        }
+      }
+
+      // 2. image 태그의 href를 xlink:href로 변경
+      svgString = svgString.replace(/(<image[^>]*)\shref="/gi, '$1 xlink:href="')
+
+      // XML 선언 추가 (Illustrator 호환성)
+      svgString = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n' + svgString
+
+      // 다운로드
       const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
