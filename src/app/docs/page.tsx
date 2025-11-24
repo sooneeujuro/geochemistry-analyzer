@@ -30,7 +30,13 @@ export default function DocsPage() {
           } catch (e) {
             console.error('Failed to decode URI:', e)
           }
-          const element = document.getElementById(id)
+
+          // rehype-slug가 user-content- 접두사 추가하므로 시도
+          let element = document.getElementById(id)
+          if (!element) {
+            element = document.getElementById(`user-content-${id}`)
+          }
+
           if (element) {
             element.scrollIntoView({ behavior: 'smooth', block: 'start' })
           }
@@ -169,7 +175,15 @@ export default function DocsPage() {
             <div className="prose prose-slate max-w-none p-8 lg:p-12">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeSlug, rehypeRaw, rehypeSanitize]}
+                rehypePlugins={[
+                  rehypeRaw,
+                  rehypeSlug,
+                  [rehypeSanitize, {
+                    attributes: {
+                      '*': ['id', 'className', 'href', 'style']
+                    }
+                  }]
+                ]}
                 components={{
                   // 헤딩 스타일
                   h1: ({ node, ...props }) => (
@@ -222,12 +236,17 @@ export default function DocsPage() {
                             console.error('Failed to decode URI:', e)
                           }
 
-                          const element = document.getElementById(id)
+                          // rehype-slug가 user-content- 접두사 추가하므로 시도
+                          let element = document.getElementById(id)
+                          if (!element) {
+                            element = document.getElementById(`user-content-${id}`)
+                          }
+
                           if (element) {
                             element.scrollIntoView({ behavior: 'smooth', block: 'start' })
                             window.history.pushState(null, '', href)
                           } else {
-                            console.log('Element not found:', id)
+                            console.log('Element not found:', id, 'or user-content-' + id)
                           }
                         }, 100)
                       }
