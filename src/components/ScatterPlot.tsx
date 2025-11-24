@@ -1,9 +1,10 @@
 'use client'
 
 import { useMemo, useState, useEffect, useRef } from 'react'
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell, LabelList } from 'recharts'
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell, LabelList, ErrorBar } from 'recharts'
 import { GeochemData, StatisticalResult, ColumnSelection, ChartStyleOptions, PlotStyleOptions } from '@/types/geochem'
-import { Settings, Palette, Move3D, Download, Shapes, Eye, EyeOff, ZoomIn, ZoomOut, TrendingUp, TrendingDown } from 'lucide-react'
+import { Settings, Palette, Move3D, Download, Shapes, Eye, EyeOff, ZoomIn, ZoomOut, TrendingUp, TrendingDown, AlertTriangle } from 'lucide-react'
+import { standardDeviation } from 'simple-statistics'
 
 interface ScatterPlotProps {
   data: GeochemData
@@ -151,6 +152,18 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
   const [showStylePanel, setShowStylePanel] = useState(false)
   const [showPlotPanel, setShowPlotPanel] = useState(false)
   const [showAxisPanel, setShowAxisPanel] = useState(false)
+  const [showErrorBarPanel, setShowErrorBarPanel] = useState(false)
+
+  // 오차범위 설정
+  const [xErrorBarEnabled, setXErrorBarEnabled] = useState(false)
+  const [xErrorBarMode, setXErrorBarMode] = useState<'column' | 'percentage' | 'fixed' | 'stddev' | 'stderr'>('percentage')
+  const [xErrorBarColumn, setXErrorBarColumn] = useState<string>('')
+  const [xErrorBarValue, setXErrorBarValue] = useState(5)
+
+  const [yErrorBarEnabled, setYErrorBarEnabled] = useState(false)
+  const [yErrorBarMode, setYErrorBarMode] = useState<'column' | 'percentage' | 'fixed' | 'stddev' | 'stderr'>('percentage')
+  const [yErrorBarColumn, setYErrorBarColumn] = useState<string>('')
+  const [yErrorBarValue, setYErrorBarValue] = useState(5)
 
   // 타입 안전한 type 필드 접근
   const getTypeField = () => {
@@ -176,7 +189,8 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
 
     const typeField = getTypeField()
 
-    return data.data.map((row, index) => {
+    // 먼저 기본 데이터 생성
+    const baseData = data.data.map((row, index) => {
       let xValue: number
       if (selectedColumns.x!.type === 'single') {
         xValue = parseFloat(row[selectedColumns.x!.numerator])
@@ -210,7 +224,71 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
         ...row
       }
     }).filter(item => !isNaN(item.x) && !isNaN(item.y) && isFinite(item.x) && isFinite(item.y))
-  }, [data, selectedColumns, isPCAMode, clusterData])
+
+    // 오차범위 계산
+    const calculateErrorBars = (
+      data: typeof baseData,
+      axis: 'x' | 'y',
+      mode: 'column' | 'percentage' | 'fixed' | 'stddev' | 'stderr',
+      column: string,
+      value: number
+    ): number[] => {
+      const values = data.map(d => d[axis])
+
+      switch (mode) {
+        case 'column':
+          // 컬럼에서 직접 읽기
+          return data.map(d => {
+            const errorValue = d[column] ? parseFloat(d[column] as any) : 0
+            return isNaN(errorValue) ? 0 : Math.abs(errorValue)
+          })
+        case 'percentage':
+          // 값의 n%
+          return values.map(v => Math.abs(v * value / 100))
+        case 'fixed':
+          // 고정값
+          return values.map(() => Math.abs(value))
+        case 'stddev':
+          // 표준편차
+          try {
+            const stddev = standardDeviation(values)
+            return values.map(() => stddev)
+          } catch {
+            return values.map(() => 0)
+          }
+        case 'stderr':
+          // 표준오차 (표준편차 / √n)
+          try {
+            const stddev = standardDeviation(values)
+            const stderr = stddev / Math.sqrt(values.length)
+            return values.map(() => stderr)
+          } catch {
+            return values.map(() => 0)
+          }
+        default:
+          return values.map(() => 0)
+      }
+    }
+
+    // X축 오차범위 추가
+    let xErrors: number[] = []
+    if (xErrorBarEnabled) {
+      xErrors = calculateErrorBars(baseData, 'x', xErrorBarMode, xErrorBarColumn, xErrorBarValue)
+    }
+
+    // Y축 오차범위 추가
+    let yErrors: number[] = []
+    if (yErrorBarEnabled) {
+      yErrors = calculateErrorBars(baseData, 'y', yErrorBarMode, yErrorBarColumn, yErrorBarValue)
+    }
+
+    // 오차범위를 데이터에 추가
+    return baseData.map((item, index) => ({
+      ...item,
+      ...(xErrorBarEnabled && { errorX: xErrors[index] || 0 }),
+      ...(yErrorBarEnabled && { errorY: yErrors[index] || 0 })
+    }))
+  }, [data, selectedColumns, isPCAMode, clusterData, xErrorBarEnabled, xErrorBarMode, xErrorBarColumn, xErrorBarValue, yErrorBarEnabled, yErrorBarMode, yErrorBarColumn, yErrorBarValue])
   
   // 타입별 데이터 그룹화 (고정된 색상 매핑)
   const { typeGroups, fixedColorMap } = useMemo(() => {
@@ -674,6 +752,18 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
         >
           <Move3D className="w-4 h-4" />
           축 범위
+        </button>
+
+        <button
+          onClick={() => setShowErrorBarPanel(!showErrorBarPanel)}
+          className={`flex items-center gap-2 px-3 py-2 border rounded-md transition-colors ${
+            showErrorBarPanel
+              ? 'bg-orange-100 border-orange-400 text-orange-700 font-medium'
+              : 'bg-white border-gray-300 hover:bg-gray-50'
+          }`}
+        >
+          <AlertTriangle className="w-4 h-4" />
+          오차범위
         </button>
 
         <button
@@ -1173,6 +1263,213 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
         </div>
       )}
 
+      {showErrorBarPanel && (
+        <div className="p-4 bg-white border rounded-lg">
+          <h3 className="font-medium mb-3">오차범위 설정</h3>
+          <p className="text-sm text-gray-600 mb-4">
+            데이터 포인트의 불확실성을 시각화합니다. X축과 Y축 각각에 대해 오차범위를 설정할 수 있습니다.
+          </p>
+
+          {/* X축 오차범위 */}
+          <div className="mb-6 pb-6 border-b">
+            <div className="flex items-center gap-3 mb-4">
+              <input
+                type="checkbox"
+                id="xErrorBarEnabled"
+                checked={xErrorBarEnabled}
+                onChange={(e) => setXErrorBarEnabled(e.target.checked)}
+                className="mr-1"
+              />
+              <label htmlFor="xErrorBarEnabled" className="text-sm font-semibold text-blue-700">
+                X축 오차범위 표시
+              </label>
+            </div>
+
+            {xErrorBarEnabled && (
+              <div className="space-y-4 pl-4 border-l-2 border-blue-200">
+                <div>
+                  <label className="block text-sm font-medium mb-2">오차 계산 방법</label>
+                  <select
+                    value={xErrorBarMode}
+                    onChange={(e) => setXErrorBarMode(e.target.value as any)}
+                    className="w-full p-2 border rounded-md"
+                  >
+                    <option value="percentage">백분율 (%)</option>
+                    <option value="fixed">고정값</option>
+                    <option value="column">데이터 컬럼에서 읽기</option>
+                    <option value="stddev">표준편차 (Standard Deviation)</option>
+                    <option value="stderr">표준오차 (Standard Error)</option>
+                  </select>
+                </div>
+
+                {xErrorBarMode === 'column' && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2">오차값 컬럼 선택</label>
+                    <select
+                      value={xErrorBarColumn}
+                      onChange={(e) => setXErrorBarColumn(e.target.value)}
+                      className="w-full p-2 border rounded-md"
+                    >
+                      <option value="">컬럼을 선택하세요</option>
+                      {[...data.numericColumns, ...data.nonNumericColumns].map(col => (
+                        <option key={col} value={col}>{col}</option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      선택한 컬럼의 값이 오차범위로 사용됩니다.
+                    </p>
+                  </div>
+                )}
+
+                {(xErrorBarMode === 'percentage' || xErrorBarMode === 'fixed') && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      {xErrorBarMode === 'percentage' ? '오차 백분율 (%)' : '오차 고정값'}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min="0"
+                        max={xErrorBarMode === 'percentage' ? 100 : 50}
+                        step={xErrorBarMode === 'percentage' ? 1 : 0.1}
+                        value={xErrorBarValue}
+                        onChange={(e) => setXErrorBarValue(parseFloat(e.target.value))}
+                        className="flex-1"
+                      />
+                      <input
+                        type="number"
+                        value={xErrorBarValue}
+                        onChange={(e) => setXErrorBarValue(parseFloat(e.target.value) || 0)}
+                        className="w-20 p-1 border rounded-md text-sm"
+                        step={xErrorBarMode === 'percentage' ? 1 : 0.1}
+                      />
+                      <span className="text-sm text-gray-600">
+                        {xErrorBarMode === 'percentage' ? '%' : ''}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {(xErrorBarMode === 'stddev' || xErrorBarMode === 'stderr') && (
+                  <div className="p-3 bg-blue-50 rounded-md">
+                    <p className="text-sm text-blue-700">
+                      {xErrorBarMode === 'stddev'
+                        ? '✓ 모든 X값의 표준편차가 오차범위로 사용됩니다.'
+                        : '✓ 표준편차 / √n 값이 오차범위로 사용됩니다.'}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Y축 오차범위 */}
+          <div>
+            <div className="flex items-center gap-3 mb-4">
+              <input
+                type="checkbox"
+                id="yErrorBarEnabled"
+                checked={yErrorBarEnabled}
+                onChange={(e) => setYErrorBarEnabled(e.target.checked)}
+                className="mr-1"
+              />
+              <label htmlFor="yErrorBarEnabled" className="text-sm font-semibold text-green-700">
+                Y축 오차범위 표시
+              </label>
+            </div>
+
+            {yErrorBarEnabled && (
+              <div className="space-y-4 pl-4 border-l-2 border-green-200">
+                <div>
+                  <label className="block text-sm font-medium mb-2">오차 계산 방법</label>
+                  <select
+                    value={yErrorBarMode}
+                    onChange={(e) => setYErrorBarMode(e.target.value as any)}
+                    className="w-full p-2 border rounded-md"
+                  >
+                    <option value="percentage">백분율 (%)</option>
+                    <option value="fixed">고정값</option>
+                    <option value="column">데이터 컬럼에서 읽기</option>
+                    <option value="stddev">표준편차 (Standard Deviation)</option>
+                    <option value="stderr">표준오차 (Standard Error)</option>
+                  </select>
+                </div>
+
+                {yErrorBarMode === 'column' && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2">오차값 컬럼 선택</label>
+                    <select
+                      value={yErrorBarColumn}
+                      onChange={(e) => setYErrorBarColumn(e.target.value)}
+                      className="w-full p-2 border rounded-md"
+                    >
+                      <option value="">컬럼을 선택하세요</option>
+                      {[...data.numericColumns, ...data.nonNumericColumns].map(col => (
+                        <option key={col} value={col}>{col}</option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      선택한 컬럼의 값이 오차범위로 사용됩니다.
+                    </p>
+                  </div>
+                )}
+
+                {(yErrorBarMode === 'percentage' || yErrorBarMode === 'fixed') && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      {yErrorBarMode === 'percentage' ? '오차 백분율 (%)' : '오차 고정값'}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min="0"
+                        max={yErrorBarMode === 'percentage' ? 100 : 50}
+                        step={yErrorBarMode === 'percentage' ? 1 : 0.1}
+                        value={yErrorBarValue}
+                        onChange={(e) => setYErrorBarValue(parseFloat(e.target.value))}
+                        className="flex-1"
+                      />
+                      <input
+                        type="number"
+                        value={yErrorBarValue}
+                        onChange={(e) => setYErrorBarValue(parseFloat(e.target.value) || 0)}
+                        className="w-20 p-1 border rounded-md text-sm"
+                        step={yErrorBarMode === 'percentage' ? 1 : 0.1}
+                      />
+                      <span className="text-sm text-gray-600">
+                        {yErrorBarMode === 'percentage' ? '%' : ''}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {(yErrorBarMode === 'stddev' || yErrorBarMode === 'stderr') && (
+                  <div className="p-3 bg-green-50 rounded-md">
+                    <p className="text-sm text-green-700">
+                      {yErrorBarMode === 'stddev'
+                        ? '✓ 모든 Y값의 표준편차가 오차범위로 사용됩니다.'
+                        : '✓ 표준편차 / √n 값이 오차범위로 사용됩니다.'}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 도움말 */}
+          <div className="mt-6 pt-6 border-t">
+            <h4 className="text-sm font-semibold mb-2">💡 오차범위 계산 방법 설명</h4>
+            <ul className="text-xs text-gray-600 space-y-1">
+              <li><strong>백분율</strong>: 데이터 값의 n%를 오차로 표시 (예: 5% → 값이 100이면 ±5)</li>
+              <li><strong>고정값</strong>: 모든 데이터에 동일한 오차값 적용</li>
+              <li><strong>컬럼</strong>: 엑셀 파일의 특정 컬럼에서 오차값 직접 읽기</li>
+              <li><strong>표준편차</strong>: 데이터의 분산 정도를 나타내는 통계값</li>
+              <li><strong>표준오차</strong>: 평균의 불확실성을 나타내는 값 (표본 크기를 고려)</li>
+            </ul>
+          </div>
+        </div>
+      )}
+
       {showAxisPanel && (
         <div className="p-4 bg-white border rounded-lg">
           <h3 className="font-medium mb-3">축 범위 설정</h3>
@@ -1435,7 +1732,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
             {/* 데이터 포인트 렌더링 */}
             {Object.keys(typeGroups).map(type => {
               if (visibleTypes[type] === false) return null
-              
+
               return (
                 <Scatter
                   key={type}
@@ -1462,6 +1759,24 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                         fill: '#333',
                         fontFamily: styleOptions.fontFamily
                       }}
+                    />
+                  )}
+                  {xErrorBarEnabled && (
+                    <ErrorBar
+                      dataKey="errorX"
+                      width={4}
+                      strokeWidth={2}
+                      stroke={fixedColorMap[type]}
+                      direction="x"
+                    />
+                  )}
+                  {yErrorBarEnabled && (
+                    <ErrorBar
+                      dataKey="errorY"
+                      width={4}
+                      strokeWidth={2}
+                      stroke={fixedColorMap[type]}
+                      direction="y"
                     />
                   )}
                 </Scatter>
