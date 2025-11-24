@@ -186,7 +186,7 @@ export default function Home() {
             Excel/CSV 파일을 업로드하여 지구화학 데이터를 분석하고 시각화하세요
           </p>
           <p className="text-sm text-gray-500 mt-2">
-            ✨ 새 기능: 오차범위 표시 (백분율/고정값/컬럼/표준편차/표준오차)
+            ✨ 새 기능: 레퍼런스 이미지 오버레이 (OCR 자동 인식, 클립보드 지원)
           </p>
           
           {/* 모드 선택 버튼 */}

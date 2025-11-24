@@ -1,10 +1,11 @@
 'use client'
 
 import { useMemo, useState, useEffect, useRef } from 'react'
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell, LabelList, ErrorBar } from 'recharts'
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell, LabelList, ErrorBar, Customized } from 'recharts'
 import { GeochemData, StatisticalResult, ColumnSelection, ChartStyleOptions, PlotStyleOptions } from '@/types/geochem'
-import { Settings, Palette, Move3D, Download, Shapes, Eye, EyeOff, ZoomIn, ZoomOut, TrendingUp, TrendingDown, AlertTriangle } from 'lucide-react'
+import { Settings, Palette, Move3D, Download, Shapes, Eye, EyeOff, ZoomIn, ZoomOut, TrendingUp, TrendingDown, AlertTriangle, Image as ImageIcon, Upload, Trash2, Eye as EyeIcon } from 'lucide-react'
 import { standardDeviation } from 'simple-statistics'
+import { createWorker } from 'tesseract.js'
 
 interface ScatterPlotProps {
   data: GeochemData
@@ -30,6 +31,19 @@ interface CustomAxisRange {
   xMax: number | 'auto'
   yMin: number | 'auto'
   yMax: number | 'auto'
+}
+
+// 레퍼런스 이미지 타입
+interface ReferenceImage {
+  id: string
+  name: string
+  imageData: string // base64
+  xMin: number
+  xMax: number
+  yMin: number
+  yMax: number
+  opacity: number
+  visible: boolean
 }
 
 // 커스텀 마커 컴포넌트
@@ -153,6 +167,12 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
   const [showPlotPanel, setShowPlotPanel] = useState(false)
   const [showAxisPanel, setShowAxisPanel] = useState(false)
   const [showErrorBarPanel, setShowErrorBarPanel] = useState(false)
+  const [showReferencePanel, setShowReferencePanel] = useState(false)
+
+  // 레퍼런스 이미지 관련 state
+  const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([])
+  const [ocrProcessing, setOcrProcessing] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 오차범위 설정
   const [xErrorBarEnabled, setXErrorBarEnabled] = useState(false)
@@ -164,6 +184,87 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
   const [yErrorBarMode, setYErrorBarMode] = useState<'column' | 'percentage' | 'fixed' | 'stddev' | 'stderr'>('percentage')
   const [yErrorBarColumn, setYErrorBarColumn] = useState<string>('')
   const [yErrorBarValue, setYErrorBarValue] = useState(5)
+
+  // 레퍼런스 이미지 OCR 처리
+  const processImageWithOCR = async (imageData: string): Promise<{ xMin: number; xMax: number; yMin: number; yMax: number } | null> => {
+    try {
+      setOcrProcessing(true)
+      const worker = await createWorker('eng')
+      const { data: { text } } = await worker.recognize(imageData)
+      await worker.terminate()
+
+      // 숫자 패턴 추출 (소수점 포함)
+      const numbers = text.match(/\d+\.?\d*/g)
+      if (numbers && numbers.length >= 4) {
+        // 간단한 휴리스틱: 처음 4개 숫자를 xMin, xMax, yMin, yMax로 가정
+        return {
+          xMin: parseFloat(numbers[0]),
+          xMax: parseFloat(numbers[1]),
+          yMin: parseFloat(numbers[2]),
+          yMax: parseFloat(numbers[3])
+        }
+      }
+      return null
+    } catch (error) {
+      console.error('OCR failed:', error)
+      return null
+    } finally {
+      setOcrProcessing(false)
+    }
+  }
+
+  // 이미지 파일 처리
+  const handleImageUpload = async (file: File) => {
+    const reader = new FileReader()
+    reader.onload = async (e) => {
+      const imageData = e.target?.result as string
+
+      // OCR 시도
+      const ocrResult = await processImageWithOCR(imageData)
+
+      const newImage: ReferenceImage = {
+        id: Date.now().toString(),
+        name: file.name,
+        imageData,
+        xMin: ocrResult?.xMin || 0,
+        xMax: ocrResult?.xMax || 100,
+        yMin: ocrResult?.yMin || 0,
+        yMax: ocrResult?.yMax || 100,
+        opacity: 30,
+        visible: true
+      }
+
+      setReferenceImages(prev => [...prev, newImage])
+
+      if (!ocrResult) {
+        alert('⚠️ 자동 축 인식에 실패했습니다. 수동으로 범위를 입력해주세요.')
+      }
+    }
+    reader.readAsDataURL(file)
+  }
+
+  // 클립보드 이미지 처리
+  const handlePaste = async (e: ClipboardEvent) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile()
+        if (file) {
+          handleImageUpload(file)
+        }
+      }
+    }
+  }
+
+  // 클립보드 이벤트 리스너 등록
+  useEffect(() => {
+    if (showReferencePanel) {
+      window.addEventListener('paste', handlePaste as any)
+      return () => window.removeEventListener('paste', handlePaste as any)
+    }
+  }, [showReferencePanel])
 
   // 타입 안전한 type 필드 접근
   const getTypeField = () => {
@@ -765,6 +866,18 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
         >
           <AlertTriangle className="w-4 h-4" />
           오차범위
+        </button>
+
+        <button
+          onClick={() => setShowReferencePanel(!showReferencePanel)}
+          className={`flex items-center gap-2 px-3 py-2 border rounded-md transition-colors ${
+            showReferencePanel
+              ? 'bg-pink-100 border-pink-400 text-pink-700 font-medium'
+              : 'bg-white border-gray-300 hover:bg-gray-50'
+          }`}
+        >
+          <ImageIcon className="w-4 h-4" />
+          레퍼런스
         </button>
 
         <button
@@ -1634,6 +1747,218 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
           </div>
         </div>
       )}
+
+      {/* 레퍼런스 이미지 오버레이 패널 */}
+      {showReferencePanel && (
+        <div className="p-6 bg-gradient-to-br from-pink-50 to-rose-50 border-2 border-pink-300 rounded-lg shadow-lg">
+          <h3 className="font-semibold text-lg mb-4 text-pink-800">📷 레퍼런스 이미지 오버레이</h3>
+
+          {/* 이미지 업로드 영역 */}
+          <div className="mb-6">
+            <div className="border-2 border-dashed border-pink-300 rounded-lg p-6 bg-white hover:bg-pink-50 transition-colors">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) handleImageUpload(file)
+                }}
+                className="hidden"
+              />
+              <div className="text-center">
+                <Upload className="w-12 h-12 mx-auto text-pink-400 mb-3" />
+                <p className="text-sm font-medium text-gray-700 mb-2">
+                  이미지를 업로드하거나 붙여넣기 (Ctrl+V)
+                </p>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-4 py-2 bg-pink-600 text-white rounded-md hover:bg-pink-700 transition-colors"
+                >
+                  파일 선택
+                </button>
+                <p className="text-xs text-gray-500 mt-3">
+                  {ocrProcessing ? (
+                    <span className="text-orange-600 font-medium">🔄 OCR로 축 범위 인식 중...</span>
+                  ) : (
+                    <>💡 축 범위가 자동으로 인식됩니다 (실패 시 수동 입력 가능)</>
+                  )}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* 저장된 레퍼런스 이미지 목록 */}
+          {referenceImages.length > 0 && (
+            <div className="space-y-4">
+              <h4 className="font-medium text-sm text-pink-800">저장된 레퍼런스 이미지 ({referenceImages.length})</h4>
+              <div className="space-y-3">
+                {referenceImages.map((refImg) => (
+                  <div key={refImg.id} className="p-4 bg-white border border-pink-200 rounded-lg shadow-sm">
+                    <div className="flex items-start gap-4">
+                      {/* 썸네일 */}
+                      <div className="flex-shrink-0">
+                        <img
+                          src={refImg.imageData}
+                          alt={refImg.name}
+                          className="w-24 h-24 object-cover rounded border border-gray-300"
+                        />
+                      </div>
+
+                      {/* 설정 영역 */}
+                      <div className="flex-1 space-y-3">
+                        {/* 이름 및 제어 버튼 */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-gray-700 truncate max-w-[200px]">
+                            {refImg.name}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                setReferenceImages(prev =>
+                                  prev.map(img =>
+                                    img.id === refImg.id
+                                      ? { ...img, visible: !img.visible }
+                                      : img
+                                  )
+                                )
+                              }}
+                              className={`p-1.5 rounded transition-colors ${
+                                refImg.visible
+                                  ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                              }`}
+                              title={refImg.visible ? '숨기기' : '표시'}
+                            >
+                              <EyeIcon className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setReferenceImages(prev => prev.filter(img => img.id !== refImg.id))
+                              }}
+                              className="p-1.5 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
+                              title="삭제"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* 축 범위 입력 */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">X축 최솟값</label>
+                            <input
+                              type="number"
+                              value={refImg.xMin}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value)
+                                setReferenceImages(prev =>
+                                  prev.map(img =>
+                                    img.id === refImg.id ? { ...img, xMin: val } : img
+                                  )
+                                )
+                              }}
+                              className="w-full px-2 py-1 text-sm border rounded"
+                              step="any"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">X축 최댓값</label>
+                            <input
+                              type="number"
+                              value={refImg.xMax}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value)
+                                setReferenceImages(prev =>
+                                  prev.map(img =>
+                                    img.id === refImg.id ? { ...img, xMax: val } : img
+                                  )
+                                )
+                              }}
+                              className="w-full px-2 py-1 text-sm border rounded"
+                              step="any"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Y축 최솟값</label>
+                            <input
+                              type="number"
+                              value={refImg.yMin}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value)
+                                setReferenceImages(prev =>
+                                  prev.map(img =>
+                                    img.id === refImg.id ? { ...img, yMin: val } : img
+                                  )
+                                )
+                              }}
+                              className="w-full px-2 py-1 text-sm border rounded"
+                              step="any"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Y축 최댓값</label>
+                            <input
+                              type="number"
+                              value={refImg.yMax}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value)
+                                setReferenceImages(prev =>
+                                  prev.map(img =>
+                                    img.id === refImg.id ? { ...img, yMax: val } : img
+                                  )
+                                )
+                              }}
+                              className="w-full px-2 py-1 text-sm border rounded"
+                              step="any"
+                            />
+                          </div>
+                        </div>
+
+                        {/* 투명도 슬라이더 */}
+                        <div>
+                          <label className="flex items-center justify-between text-xs font-medium text-gray-600 mb-1">
+                            <span>투명도</span>
+                            <span className="text-pink-600">{refImg.opacity}%</span>
+                          </label>
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={refImg.opacity}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value)
+                              setReferenceImages(prev =>
+                                prev.map(img =>
+                                  img.id === refImg.id ? { ...img, opacity: val } : img
+                                )
+                              )
+                            }}
+                            className="w-full"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 도움말 */}
+          <div className="mt-6 pt-6 border-t border-pink-200">
+            <h4 className="text-sm font-semibold mb-2">💡 레퍼런스 이미지 사용 팁</h4>
+            <ul className="text-xs text-gray-600 space-y-1">
+              <li><strong>자동 인식</strong>: 업로드 시 OCR로 축 범위를 자동 인식합니다</li>
+              <li><strong>수동 조정</strong>: 인식 실패 시 또는 정확한 조정이 필요할 때 직접 입력하세요</li>
+              <li><strong>투명도</strong>: 슬라이더로 레퍼런스 이미지의 투명도를 조절할 수 있습니다</li>
+              <li><strong>비교</strong>: 여러 레퍼런스 이미지를 저장하고 표시/숨김으로 비교 가능합니다</li>
+              <li><strong>붙여넣기</strong>: Ctrl+V로 클립보드의 이미지를 빠르게 추가할 수 있습니다</li>
+            </ul>
+          </div>
+        </div>
+      )}
         </div>
 
         {/* 오른쪽: 차트 */}
@@ -1823,6 +2148,55 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                 strokeDasharray="5 5"
               />
             ))}
+
+            {/* 레퍼런스 이미지 오버레이 */}
+            {referenceImages
+              .filter(img => img.visible)
+              .map(img => {
+                // Recharts Customized 컴포넌트를 사용하여 이미지 렌더링
+                return (
+                  <Customized
+                    key={img.id}
+                    component={(props: any) => {
+                      const { xScale, yScale, width, height, offset } = props
+
+                      if (!xScale || !yScale) return null
+
+                      // 이미지의 축 범위를 픽셀 좌표로 변환
+                      const x1 = xScale(img.xMin)
+                      const x2 = xScale(img.xMax)
+                      const y1 = yScale(img.yMax) // Y축은 반대 방향
+                      const y2 = yScale(img.yMin)
+
+                      // 로그 스케일 처리
+                      const imgX = Math.min(x1, x2)
+                      const imgY = Math.min(y1, y2)
+                      const imgWidth = Math.abs(x2 - x1)
+                      const imgHeight = Math.abs(y2 - y1)
+
+                      return (
+                        <g>
+                          <defs>
+                            <clipPath id={`clip-${img.id}`}>
+                              <rect x={imgX} y={imgY} width={imgWidth} height={imgHeight} />
+                            </clipPath>
+                          </defs>
+                          <image
+                            href={img.imageData}
+                            x={imgX}
+                            y={imgY}
+                            width={imgWidth}
+                            height={imgHeight}
+                            opacity={img.opacity / 100}
+                            preserveAspectRatio="none"
+                            clipPath={`url(#clip-${img.id})`}
+                          />
+                        </g>
+                      )
+                    }}
+                  />
+                )
+              })}
           </ScatterChart>
         </ResponsiveContainer>
           </div>
