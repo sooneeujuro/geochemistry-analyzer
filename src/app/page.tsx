@@ -173,7 +173,10 @@ export default function Home() {
             </h1>
             <Link
               href="/docs"
+              target="_blank"
+              rel="noopener noreferrer"
               className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 shadow-lg hover:shadow-xl transition-all transform hover:scale-105"
+              title="새 탭에서 사용 가이드 열기"
             >
               <BookOpen className="w-5 h-5" />
               <span className="font-semibold">사용 가이드</span>
