@@ -23,7 +23,8 @@ export async function POST(request: NextRequest) {
 
     // Gemini 클라이언트 생성
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-    const model = genAI.getGenerativeModel({ model: 'gemini-3-pro-preview' })
+    // gemini-2.0-flash 사용 (안정적, 무료 티어)
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
     const systemPrompt = `당신은 지구화학 데이터 분석 전문가입니다. 주어진 변수 간의 상관관계를 분석하고, 지질학적/지구화학적 의미를 설명해주세요.
 
@@ -72,7 +73,7 @@ ${tags?.includes('log-scale') ? '💡 로그 스케일 변환 시 더 강한 선
         correlation,
         rSquared,
         tags,
-        model: 'gemini-3-pro-preview',
+        model: 'gemini-2.0-flash',
         timestamp: new Date().toISOString()
       }
     })
@@ -80,16 +81,26 @@ ${tags?.includes('log-scale') ? '💡 로그 스케일 변환 시 더 강한 선
   } catch (error) {
     console.error('AI Insight API Error:', error)
 
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+
     // Gemini API 키 오류 처리
-    if (error instanceof Error && error.message.includes('API key')) {
+    if (errorMessage.includes('API key')) {
       return NextResponse.json(
         { error: 'Gemini API 키가 설정되지 않았습니다.' },
         { status: 500 }
       )
     }
 
+    // 모델을 찾을 수 없는 경우
+    if (errorMessage.includes('not found') || errorMessage.includes('404')) {
+      return NextResponse.json(
+        { error: `모델을 찾을 수 없습니다. 상세: ${errorMessage}` },
+        { status: 500 }
+      )
+    }
+
     return NextResponse.json(
-      { error: 'AI 해석 생성 중 오류가 발생했습니다.' },
+      { error: `AI 해석 생성 중 오류: ${errorMessage}` },
       { status: 500 }
     )
   }
