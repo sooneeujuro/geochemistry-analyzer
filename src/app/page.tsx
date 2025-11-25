@@ -1,15 +1,19 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import FileUpload from '@/components/FileUpload'
 import DataViewer from '@/components/DataViewer'
 import AnalysisPanel from '@/components/AnalysisPanel'
 import ScanMode from '@/components/ScanMode'
+import SavedAnalysis from '@/components/SavedAnalysis'
+import MyDataPanel from '@/components/MyDataPanel'
 import AuthModal from '@/components/AuthModal'
 import { useAuth } from '@/contexts/AuthContext'
 import { GeochemData, ColumnSelection, ScanResult, ScanSummary } from '@/types/geochem'
-import { BarChart3, Scan, ArrowLeft, BookOpen, User, LogOut } from 'lucide-react'
+import { BarChart3, Scan, ArrowLeft, BookOpen, User, LogOut, Star, Database } from 'lucide-react'
 import Link from 'next/link'
+
+type Mode = 'analysis' | 'scan' | 'saved' | 'mydata'
 
 export default function Home() {
   const { user, loading, signOut } = useAuth()
@@ -21,7 +25,7 @@ export default function Home() {
     useTypeColumn: false,
     selectedTypeColumn: undefined
   })
-  const [mode, setMode] = useState<'analysis' | 'scan'>('analysis')
+  const [mode, setMode] = useState<Mode>('analysis')
   const [cameFromScan, setCameFromScan] = useState(false)
   const [scanResults, setScanResults] = useState<ScanResult[]>([])
   const [scanSummary, setScanSummary] = useState<ScanSummary | null>(null)
@@ -32,7 +36,8 @@ export default function Home() {
     setScanResults([])
     setScanSummary(null)
     setCameFromScan(false)
-    
+    setMode('analysis')
+
     if (newData.typeColumn) {
       setSelectedColumns(prev => ({
         ...prev,
@@ -76,11 +81,47 @@ export default function Home() {
     setMode(newMode)
   }
 
+  // 저장된 분석 로드
+  const handleLoadAnalysis = (loadedData: GeochemData, loadedSettings: ColumnSelection) => {
+    setData(loadedData)
+    setSelectedColumns(loadedSettings)
+    setMode('analysis')
+  }
+
+  // 스캔 모드 렌더링
   if (mode === 'scan' && data) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-purple-50 to-indigo-100 p-8">
         <div className="max-w-7xl mx-auto">
-          <header className="text-center mb-8">
+          <header className="text-center mb-8 relative">
+            {/* 상단 로그인 버튼 */}
+            <div className="absolute top-0 right-0 flex items-center gap-2">
+              {loading ? (
+                <div className="animate-pulse bg-gray-200 h-10 w-24 rounded-lg"></div>
+              ) : user ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600 bg-white px-3 py-2 rounded-lg shadow">
+                    {user.email?.split('@')[0]}
+                  </span>
+                  <button
+                    onClick={() => signOut()}
+                    className="flex items-center gap-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                    title="로그아웃"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowAuthModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-white text-gray-700 rounded-lg shadow hover:shadow-md transition-all"
+                >
+                  <User className="w-4 h-4" />
+                  <span className="font-medium">로그인</span>
+                </button>
+              )}
+            </div>
+
             <div className="flex items-center justify-center mb-4">
               <button
                 onClick={() => {
@@ -100,9 +141,9 @@ export default function Home() {
               모든 수치 컬럼 조합의 상관관계를 자동으로 분석하여 유의미한 패턴을 찾아드립니다
             </p>
           </header>
-          
-          <ScanMode 
-            data={data} 
+
+          <ScanMode
+            data={data}
             onResultSelect={handleScanResultSelect}
             selectedTypeColumn={selectedColumns.selectedTypeColumn}
             scanResults={scanResults}
@@ -113,6 +154,7 @@ export default function Home() {
             onModeChange={handleModeChange}
           />
         </div>
+        <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
       </main>
     )
   }
@@ -120,7 +162,7 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
       <div className="max-w-7xl mx-auto">
-        <header className="text-center mb-8">
+        <header className="text-center mb-8 relative">
           {/* 스캔에서 온 경우 돌아가기 버튼 */}
           {cameFromScan && (
             <div className="flex justify-center mb-6">
@@ -136,13 +178,13 @@ export default function Home() {
                 }}
               >
                 <ArrowLeft className="h-5 w-5 mr-2" />
-                📊 스캔 결과로 돌아가기
+                스캔 결과로 돌아가기
               </button>
             </div>
           )}
-          
+
           {/* 상단 로그인 버튼 */}
-          <div className="absolute top-4 right-4 flex items-center gap-2">
+          <div className="absolute top-0 right-0 flex items-center gap-2">
             {loading ? (
               <div className="animate-pulse bg-gray-200 h-10 w-24 rounded-lg"></div>
             ) : user ? (
@@ -187,46 +229,56 @@ export default function Home() {
           <p className="text-gray-600">
             Excel/CSV 파일을 업로드하여 지구화학 데이터를 분석하고 시각화하세요
           </p>
-          <p className="text-sm text-gray-500 mt-2">
-            ✨ 새 기능: 레퍼런스 이미지 오버레이 (OCR 자동 인식, 클립보드 지원)
-          </p>
-          
-          {/* 모드 선택 버튼 */}
-          <div className="flex justify-center mt-4 space-x-4">
-            {data && !cameFromScan && (
-              <>
-                <button
-                  onClick={() => {
-                    setMode('analysis')
-                    setCameFromScan(false)
-                  }}
-                  className={`flex items-center px-6 py-3 rounded-lg font-medium transition-all ${
-                    mode === 'analysis' 
-                      ? 'bg-blue-600 text-white shadow-lg' 
-                      : 'bg-white text-gray-700 shadow-md hover:shadow-lg'
-                  }`}
-                >
-                  <BarChart3 className="h-5 w-5 mr-2" />
-                  기본 분석 모드
-                </button>
-                <button
-                  onClick={() => {
-                    setMode('scan')
-                    setCameFromScan(false)
-                  }}
-                  className={`flex items-center px-6 py-3 rounded-lg font-medium transition-all ${
-                    mode === 'scan' 
-                      ? 'bg-purple-600 text-white shadow-lg' 
-                      : 'bg-white text-gray-700 shadow-md hover:shadow-lg'
-                  }`}
-                >
-                  <Scan className="h-5 w-5 mr-2" />
-                  스캔 모드 (전체 분석)
-                </button>
-              </>
-            )}
+
+          {/* 모드 선택 탭 */}
+          <div className="flex justify-center mt-6 space-x-2">
+            <button
+              onClick={() => setMode('analysis')}
+              className={`flex items-center px-5 py-2.5 rounded-lg font-medium transition-all ${
+                mode === 'analysis'
+                  ? 'bg-blue-600 text-white shadow-lg'
+                  : 'bg-white text-gray-700 shadow hover:shadow-md'
+              }`}
+            >
+              <BarChart3 className="h-4 w-4 mr-2" />
+              기본 분석
+            </button>
+            <button
+              onClick={() => setMode('scan')}
+              disabled={!data}
+              className={`flex items-center px-5 py-2.5 rounded-lg font-medium transition-all ${
+                mode === 'scan'
+                  ? 'bg-purple-600 text-white shadow-lg'
+                  : 'bg-white text-gray-700 shadow hover:shadow-md'
+              } ${!data ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              <Scan className="h-4 w-4 mr-2" />
+              스캔 모드
+            </button>
+            <button
+              onClick={() => setMode('saved')}
+              className={`flex items-center px-5 py-2.5 rounded-lg font-medium transition-all ${
+                mode === 'saved'
+                  ? 'bg-yellow-500 text-white shadow-lg'
+                  : 'bg-white text-gray-700 shadow hover:shadow-md'
+              }`}
+            >
+              <Star className="h-4 w-4 mr-2" />
+              저장된 분석
+            </button>
+            <button
+              onClick={() => setMode('mydata')}
+              className={`flex items-center px-5 py-2.5 rounded-lg font-medium transition-all ${
+                mode === 'mydata'
+                  ? 'bg-indigo-600 text-white shadow-lg'
+                  : 'bg-white text-gray-700 shadow hover:shadow-md'
+              }`}
+            >
+              <Database className="h-4 w-4 mr-2" />
+              내 데이터
+            </button>
           </div>
-          
+
           {/* 스캔에서 온 경우 현재 선택된 조합 표시 */}
           {cameFromScan && selectedColumns.x && selectedColumns.y && (
             <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
@@ -239,28 +291,47 @@ export default function Home() {
             </div>
           )}
         </header>
-        
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1">
-            <FileUpload onDataLoad={handleDataLoad} />
-          </div>
-          <div className="lg:col-span-2">
-            {data && (
-              <DataViewer
-                data={data}
-                selectedColumns={selectedColumns}
-                onColumnSelect={setSelectedColumns}
-              />
+
+        {/* 저장된 분석 모드 */}
+        {mode === 'saved' && (
+          <SavedAnalysis
+            currentData={data}
+            currentSettings={selectedColumns}
+            onLoadAnalysis={handleLoadAnalysis}
+          />
+        )}
+
+        {/* 내 데이터 모드 */}
+        {mode === 'mydata' && (
+          <MyDataPanel onLoadData={handleDataLoad} />
+        )}
+
+        {/* 기본 분석 모드 */}
+        {mode === 'analysis' && (
+          <>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-1">
+                <FileUpload onDataLoad={handleDataLoad} />
+              </div>
+              <div className="lg:col-span-2">
+                {data && (
+                  <DataViewer
+                    data={data}
+                    selectedColumns={selectedColumns}
+                    onColumnSelect={setSelectedColumns}
+                  />
+                )}
+              </div>
+            </div>
+            {data && selectedColumns.x && selectedColumns.y && (
+              <div className="mt-6">
+                <AnalysisPanel
+                  data={data}
+                  selectedColumns={selectedColumns}
+                />
+              </div>
             )}
-          </div>
-        </div>
-        {data && selectedColumns.x && selectedColumns.y && (
-          <div className="mt-6">
-            <AnalysisPanel
-              data={data}
-              selectedColumns={selectedColumns}
-            />
-          </div>
+          </>
         )}
       </div>
 
@@ -268,4 +339,4 @@ export default function Home() {
       <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
     </main>
   )
-} 
+}

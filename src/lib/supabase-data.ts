@@ -37,6 +37,7 @@ export interface AnalysisSettings {
   dataset_id?: string
   settings: {
     selectedColumns: ColumnSelection
+    dataFileName?: string
     graphSettings?: {
       showTrendline?: boolean
       showTypeTrends?: Record<string, boolean>
