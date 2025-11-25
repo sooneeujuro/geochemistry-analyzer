@@ -3,6 +3,12 @@
 import * as ss from 'simple-statistics'
 import { GeochemData, StatisticalResult } from '@/types/geochem'
 
+// 컬럼 분류 결과 타입
+export interface ColumnClassification {
+  group_map: Record<string, string>  // 컬럼명 -> 그룹ID
+  composition_pairs: [string, string][]  // 구성 관계에 있는 컬럼 쌍들
+}
+
 // 순위 계산 함수
 function getRanks(data: number[]): number[] {
   const sorted = [...data]
@@ -137,6 +143,73 @@ function getCommonPrefixLength(a: string, b: string): number {
   return i
 }
 
+/**
+ * AI 기반 컬럼 그룹핑을 활용하여 의미있는 쌍인지 판단
+ * - 같은 그룹의 변수 쌍은 의미없음 (예: H2 % vs H2 mmol/kg)
+ * - 구성 관계에 있는 쌍도 의미없음 (예: He/Ar vs He)
+ */
+export function isMeaningfulPair(
+  col1: string,
+  col2: string,
+  classification?: ColumnClassification
+): boolean {
+  // 분류 정보가 없으면 기본적으로 의미있다고 판단
+  if (!classification) return true
+
+  const { group_map, composition_pairs } = classification
+
+  // 1. 같은 그룹인지 확인
+  const group1 = group_map[col1]
+  const group2 = group_map[col2]
+
+  if (group1 && group2 && group1 === group2) {
+    console.log(`Skipping same group: ${col1} & ${col2} -> ${group1}`)
+    return false
+  }
+
+  // 2. 구성 관계에 있는지 확인
+  for (const [a, b] of composition_pairs) {
+    if (
+      (a === col1 && b === col2) ||
+      (a === col2 && b === col1)
+    ) {
+      console.log(`Skipping composition pair: ${col1} & ${col2}`)
+      return false
+    }
+  }
+
+  return true
+}
+
+/**
+ * 컬럼 분류 API 호출
+ */
+export async function classifyColumns(columns: string[]): Promise<ColumnClassification | null> {
+  try {
+    const response = await fetch('/api/classify-columns', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ columns })
+    })
+
+    if (!response.ok) {
+      console.error('Column classification failed:', response.statusText)
+      return null
+    }
+
+    const result = await response.json()
+    if (result.success) {
+      console.log(`Column classification (${result.method}):`, result.classification)
+      return result.classification
+    }
+
+    return null
+  } catch (error) {
+    console.error('Column classification error:', error)
+    return null
+  }
+}
+
 // B. 비선형 관계 탐지
 function detectNonLinearRelationship(
   pearsonCorr: number,
@@ -264,6 +337,7 @@ export async function performSmartInsight(
     maxResults?: number
     includeTypeColumn?: boolean
     selectedTypeColumn?: string
+    columnClassification?: ColumnClassification  // AI 기반 컬럼 분류 결과
   } = {}
 ): Promise<SmartInsightResult> {
   const startTime = Date.now()
@@ -273,7 +347,8 @@ export async function performSmartInsight(
     pValueThreshold = 0.05,
     maxResults = 20,
     includeTypeColumn = false,
-    selectedTypeColumn
+    selectedTypeColumn,
+    columnClassification
   } = options
 
   const candidates: InsightCandidate[] = []
@@ -286,6 +361,7 @@ export async function performSmartInsight(
   let skippedLowCorr = 0
   let skippedHighP = 0
   let skippedDuplicate = 0
+  let skippedSameGroup = 0  // AI 그룹핑으로 스킵된 쌍
 
   // 상관관계 매트릭스 초기화
   for (const col of numericColumns) {
@@ -299,6 +375,12 @@ export async function performSmartInsight(
 
       const xCol = numericColumns[i]
       const yCol = numericColumns[j]
+
+      // AI 기반 그룹핑으로 의미없는 쌍 필터링
+      if (!isMeaningfulPair(xCol, yCol, columnClassification)) {
+        skippedSameGroup++
+        continue
+      }
 
       // 데이터 추출
       const pairs: { x: number; y: number; type: string }[] = []
@@ -423,6 +505,7 @@ export async function performSmartInsight(
 
   console.log('Smart Insight 분석 결과:', {
     totalPairs,
+    skippedSameGroup,  // AI 그룹핑으로 스킵
     skippedLowData,
     skippedError,
     skippedLowCorr,

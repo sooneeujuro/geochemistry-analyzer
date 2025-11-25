@@ -6,7 +6,9 @@ import {
   performSmartInsight,
   SmartInsightResult,
   InsightCandidate,
-  InsightTag
+  InsightTag,
+  ColumnClassification,
+  classifyColumns
 } from '@/lib/smart-insight'
 
 // AI 해석 결과 타입
@@ -58,6 +60,8 @@ export default function SmartInsight({
   const [isLoadingAI, setIsLoadingAI] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [sampleDescription, setSampleDescription] = useState('')
+  const [columnClassification, setColumnClassification] = useState<ColumnClassification | null>(null)
+  const [isClassifying, setIsClassifying] = useState(false)
 
   // 샘플 데이터 추출 (min, max, median, outliers)
   const extractSampleData = (chartData: Array<{ x: number; y: number }>) => {
@@ -116,12 +120,25 @@ export default function SmartInsight({
     setScanResult(null)
 
     try {
+      // 1. 먼저 컬럼 분류 실행 (처음이거나 캐시가 없을 때)
+      let classification = columnClassification
+      if (!classification) {
+        setIsClassifying(true)
+        console.log('컬럼 분류 시작:', data.numericColumns.length, '개 컬럼')
+        classification = await classifyColumns(data.numericColumns)
+        setColumnClassification(classification)
+        setIsClassifying(false)
+        console.log('컬럼 분류 완료:', classification)
+      }
+
+      // 2. Smart Insight 분석 실행 (컬럼 분류 결과 포함)
       const result = await performSmartInsight(data, {
         correlationThreshold: 0.5,
         pValueThreshold: 0.05,
         maxResults: 20,
         includeTypeColumn: !!selectedTypeColumn,
-        selectedTypeColumn
+        selectedTypeColumn,
+        columnClassification: classification || undefined
       })
 
       setScanResult(result)
@@ -131,6 +148,7 @@ export default function SmartInsight({
       console.error('Smart Insight scan failed:', error)
     } finally {
       setIsScanning(false)
+      setIsClassifying(false)
     }
   }
 
@@ -276,7 +294,7 @@ export default function SmartInsight({
             {isScanning ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                분석 중...
+                {isClassifying ? '컬럼 분류 중...' : '분석 중...'}
               </>
             ) : (
               <>
