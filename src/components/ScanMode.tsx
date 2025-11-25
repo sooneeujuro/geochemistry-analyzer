@@ -456,9 +456,7 @@ export default function ScanMode({
         }
       }
       
-      console.log('🔧 Debug: PCA 결과 저장 중...', pcaResultData)
       setLastPcaResult(pcaResultData)
-      console.log('🔧 Debug: PCA 결과 저장 완료!')
 
       // 스캔 결과 자동 스크롤
       setTimeout(() => {
@@ -471,8 +469,6 @@ export default function ScanMode({
       alert(`🎉 PCA 분석 완료!\n\n✅ 선택 변수: ${variables.join(', ')}\n📊 설명 분산: ${varianceInfo}\n🎯 ${clusterInfo}\n\n🔍 주성분 로딩:\n${loadingsInfo}\n\n💡 PC1 vs PC2 그래프가 분석 패널에 표시됩니다.\n🖱️ 클러스터별로 색칠된 그래프를 조작해보세요!\n\n📝 오른쪽 상단의 'AI 해설' 버튼으로 상세한 분석 해설을 확인하세요!`)
       
     } catch (error) {
-      console.error('🔧 Debug: PCA Analysis Error:', error)
-      console.error('🔧 Debug: Error details:', error instanceof Error ? error.message : 'Unknown error')
       alert(`❌ PCA 분석 중 오류가 발생했습니다:\n${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }

@@ -94,19 +94,92 @@ function getRanks(data: number[]): number[] {
   return ranks
 }
 
-// t-test p-값 근사 계산
+// t-분포 p-값 계산 (regularized incomplete beta function 사용)
 function calculateTTestPValue(t: number, df: number): number {
-  // 간단한 t-분포 p-값 근사
-  // 실제 프로덕션에서는 더 정확한 라이브러리 사용 권장
   const absT = Math.abs(t)
-  
-  if (absT > 6) return 0.0001
-  if (absT > 4) return 0.001
-  if (absT > 3) return 0.01
-  if (absT > 2) return 0.05
-  if (absT > 1) return 0.1
-  
-  return 0.5
+  const x = df / (df + absT * absT)
+
+  // Regularized incomplete beta function 근사 (Lentz's continued fraction algorithm)
+  const betaIncomplete = (a: number, b: number, x: number): number => {
+    if (x === 0) return 0
+    if (x === 1) return 1
+
+    // Lanczos approximation for beta function
+    const lnBeta = (a: number, b: number): number => {
+      const lnGamma = (z: number): number => {
+        const g = 7
+        const coefficients = [
+          0.99999999999980993,
+          676.5203681218851,
+          -1259.1392167224028,
+          771.32342877765313,
+          -176.61502916214059,
+          12.507343278686905,
+          -0.13857109526572012,
+          9.9843695780195716e-6,
+          1.5056327351493116e-7
+        ]
+
+        if (z < 0.5) {
+          return Math.log(Math.PI / Math.sin(Math.PI * z)) - lnGamma(1 - z)
+        }
+
+        z -= 1
+        let x = coefficients[0]
+        for (let i = 1; i < g + 2; i++) {
+          x += coefficients[i] / (z + i)
+        }
+        const t = z + g + 0.5
+        return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(x)
+      }
+
+      return lnGamma(a) + lnGamma(b) - lnGamma(a + b)
+    }
+
+    // Continued fraction approximation
+    const maxIterations = 200
+    const epsilon = 1e-10
+
+    let c = 1
+    let d = 1 - (a + b) * x / (a + 1)
+    if (Math.abs(d) < epsilon) d = epsilon
+    d = 1 / d
+    let h = d
+
+    for (let m = 1; m <= maxIterations; m++) {
+      const m2 = 2 * m
+
+      // Even step
+      let an = m * (b - m) * x / ((a + m2 - 1) * (a + m2))
+      d = 1 + an * d
+      if (Math.abs(d) < epsilon) d = epsilon
+      c = 1 + an / c
+      if (Math.abs(c) < epsilon) c = epsilon
+      d = 1 / d
+      h *= d * c
+
+      // Odd step
+      an = -(a + m) * (a + b + m) * x / ((a + m2) * (a + m2 + 1))
+      d = 1 + an * d
+      if (Math.abs(d) < epsilon) d = epsilon
+      c = 1 + an / c
+      if (Math.abs(c) < epsilon) c = epsilon
+      d = 1 / d
+      const del = d * c
+      h *= del
+
+      if (Math.abs(del - 1) < epsilon) break
+    }
+
+    const lnBetaVal = lnBeta(a, b)
+    const result = Math.exp(a * Math.log(x) + b * Math.log(1 - x) - lnBetaVal) * h / a
+
+    return Math.min(1, Math.max(0, result))
+  }
+
+  // Two-tailed p-value from t-distribution
+  const pValue = betaIncomplete(df / 2, 0.5, x)
+  return Math.min(1, Math.max(0, pValue))
 }
 
 // 전체 스캔 분석 함수
@@ -389,12 +462,6 @@ export function performPCA(
   nComponents?: number
 ): PCAResult {
   try {
-    console.log('PCA 시작:', { 
-      totalRows: data.length, 
-      variables: variableNames,
-      sampleData: data.slice(0, 3)
-    })
-
     // 데이터 준비: 변수별로 숫자 데이터만 추출하고 결측값 제거
     const cleanData: number[][] = []
     const invalidRows: number[] = []
@@ -444,14 +511,6 @@ export function performPCA(
       }
     })
 
-    console.log('데이터 정리 결과:', {
-      totalRows: data.length,
-      validRows: cleanData.length,
-      invalidRows: invalidRows.length,
-      invalidRowsIndices: invalidRows.slice(0, 10), // 처음 10개만 표시
-      sampleCleanData: cleanData.slice(0, 3)
-    })
-
     // 변수별 유효 데이터 개수 확인
     const variableValidCounts = variableNames.map(name => {
       const validCount = data.filter(row => {
@@ -465,8 +524,6 @@ export function performPCA(
       return { variable: name, validCount, totalCount: data.length }
     })
 
-    console.log('변수별 유효 데이터:', variableValidCounts)
-    
     if (cleanData.length < 3) {
       const errorDetails = `
 PCA 분석에 필요한 유효 데이터가 부족합니다.
@@ -571,12 +628,6 @@ ${variableValidCounts.map(v => `• ${v.variable}: ${v.validCount}/${v.totalCoun
       }
     })
 
-    console.log('PCA 완료:', {
-      explainedVariance,
-      clustersFound: k,
-      validDataUsed: cleanData.length
-    })
-    
     return {
       scores: scores,
       loadings: loadings,
@@ -804,16 +855,10 @@ function findOptimalClusters(data: number[][], maxK: number = 8): number {
   
   // 데이터 크기에 따른 최대 클러스터 수 결정 (제한 완화)
   const actualMaxK = Math.min(maxK, Math.floor(data.length / 2), 6) // 최대 6개
-  
+
   const wcss: number[] = []
   const silhouetteScores: number[] = []
-  
-  console.log('🔍 클러스터 최적화 시작:', {
-    data_points: data.length,
-    dimensions: data[0]?.length || 0,
-    max_k: actualMaxK
-  })
-  
+
   for (let k = 2; k <= actualMaxK; k++) {
     const clusters = kMeansClustering(data, k)
     
@@ -860,22 +905,14 @@ function findOptimalClusters(data: number[][], maxK: number = 8): number {
   if (silhouetteScores.length >= 2) { // k=3이 가능한 경우
     const k3Score = silhouetteScores[1] // k=3의 스코어
     const k2Score = silhouetteScores[0] // k=2의 스코어
-    
+
     // k=3이 k=2보다 조금이라도 좋거나, 거의 비슷하면 k=3 선택
     if (k3Score >= k2Score - 0.05) { // 0.05 차이까지는 k=3 선호
       bestK = 3
       maxSilhouette = k3Score
     }
   }
-  
-  console.log('🎯 클러스터 최적화 결과:', {
-    wcss: wcss.map(w => w.toFixed(0)),
-    silhouette: silhouetteScores.map(s => s.toFixed(3)),
-    optimal_k: bestK,
-    max_silhouette: maxSilhouette.toFixed(3),
-    reasoning: bestK === 3 ? '3개 클러스터가 가장 자연스러운 분리를 제공' : `${bestK}개 클러스터가 최적`
-  })
-  
+
   return Math.max(2, Math.min(bestK, actualMaxK))
 }
 
@@ -932,18 +969,11 @@ export async function calculatePCA(
       row.map((val, j) => stds[j] > 0 ? (val - means[j]) / stds[j] : 0)
     )
 
-    console.log('📊 데이터 표준화 완료:', {
-      means: means.map(m => m.toFixed(3)),
-      stds: stds.map(s => s.toFixed(3))
-    })
-
     // 2. ML-Matrix를 사용한 공분산 행렬 계산
     const dataMatrix = new Matrix(standardizedData)
     
     // 공분산 행렬 = (X^T * X) / (n-1)
     const covMatrix = dataMatrix.transpose().mmul(dataMatrix).div(numSamples - 1)
-    
-    console.log('🔢 공분산 행렬 계산 완료')
 
     // 3. 고유값 분해 (EVD) 사용
     const evd = new (EVD as any)(covMatrix)
@@ -951,11 +981,6 @@ export async function calculatePCA(
     const eigenvalues = [...eigenvaluesRaw].reverse() // 내림차순 정렬
     const eigenvectorsRaw = (evd as any).eigenvectorMatrix.transpose().to2DArray() as number[][]
     const eigenvectors = [...eigenvectorsRaw].reverse() // 고유벡터들
-
-    console.log('⚡ 고유값 분해 완료:', {
-      eigenvalues: eigenvalues.map((v: number) => v.toFixed(6)),
-      numEigenvectors: eigenvectors.length
-    })
 
     // 컴포넌트 수 결정
     const maxComponents = Math.min(variableNames.length, cleanData.length - 1)
@@ -986,14 +1011,6 @@ export async function calculatePCA(
     const loadings = selectedEigenvectors.map((eigenvector: number[], compIndex: number) =>
       eigenvector.map((loading: number) => loading * Math.sqrt(Math.max(0, selectedEigenvalues[compIndex])))
     )
-
-    console.log('🎉 PCA 계산 완료:', {
-      samples: numSamples,
-      variables: numVars,
-      components: finalNComponents,
-      explainedVariance: explainedVariance.map((v: number) => v.toFixed(1) + '%'),
-      eigenvalues: selectedEigenvalues.map((v: number) => v.toFixed(6))
-    })
 
     return {
       scores,

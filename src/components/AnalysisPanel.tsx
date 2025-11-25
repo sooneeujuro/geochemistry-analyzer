@@ -147,7 +147,6 @@ export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelPr
         }
       }
 
-      console.log('타입별 통계 계산 완료:', results)
       setTypeStatistics(results)
     } catch (error) {
       console.error('Type analysis failed:', error)
@@ -165,6 +164,7 @@ export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelPr
         setTypeStatistics([])
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedColumns.x, selectedColumns.y, selectedColumns.useTypeColumn, selectedColumns.selectedTypeColumn, data])
 
   const performAnalysis = async () => {
@@ -309,16 +309,6 @@ export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelPr
                                   selectedColumns.y?.numerator === 'PC2' && 
                                   data.pcaResult !== undefined
                 const clusterData = data.pcaResult?.clusters || []
-                
-                console.log('AnalysisPanel - PCA 모드 체크:', {
-                  xColumn: selectedColumns.x?.numerator,
-                  yColumn: selectedColumns.y?.numerator,
-                  hasPcaResult: !!data.pcaResult,
-                  isPCAMode,
-                  clusterDataLength: clusterData.length,
-                  pcaResultKeys: data.pcaResult ? Object.keys(data.pcaResult) : [],
-                  typeStatisticsLength: typeStatistics.length
-                })
                 
                 return (
                   <ScatterPlot

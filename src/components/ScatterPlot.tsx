@@ -830,8 +830,6 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
       intercept = stats.regression.intercept
     }
     
-    console.log('전체 추세선 데이터:', { slope, intercept, statistics })
-    
     if (slope !== undefined && intercept !== undefined) {
       return calculateTrendlineSegment(slope, intercept, currentRange)
     }
@@ -853,13 +851,6 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
           type: typeStat.type,
           segment,
           color: fixedColorMap[typeStat.type] || '#666666'
-        })
-        
-        console.log(`타입별 추세선 생성: ${typeStat.type}`, {
-          slope: typeStat.slope,
-          intercept: typeStat.intercept,
-          segment,
-          color: fixedColorMap[typeStat.type]
         })
       }
     })

@@ -245,8 +245,6 @@ export default function DocsPage() {
                           if (element) {
                             element.scrollIntoView({ behavior: 'smooth', block: 'start' })
                             window.history.pushState(null, '', href)
-                          } else {
-                            console.log('Element not found:', id, 'or user-content-' + id)
                           }
                         }, 100)
                       }
