@@ -31,9 +31,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Gemini 클라이언트 생성
+    // Gemini 클라이언트 생성 (gemini-1.5-flash가 더 안정적)
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' })
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
     const systemPrompt = `당신은 지구화학 데이터 분석 전문가입니다. 주어진 변수 간의 상관관계를 분석하고, 지질학적/지구화학적 의미를 설명해주세요.
 
@@ -84,6 +84,21 @@ ${tags?.includes('log-scale') ? '💡 로그 스케일 변환 시 더 강한 선
     })
 
     const responseText = result.response.text()
+    console.log('Gemini 응답:', responseText?.substring(0, 500))
+
+    // 빈 응답 체크
+    if (!responseText || responseText.trim() === '') {
+      return NextResponse.json({
+        success: true,
+        interpretation: {
+          title: `${xColumn} vs ${yColumn} 분석`,
+          summary: 'AI가 응답을 생성하지 못했습니다. 다시 시도해주세요.',
+          mechanism: '',
+          geological_meaning: '',
+          warning: 'empty_response'
+        }
+      })
+    }
 
     // JSON 파싱 시도
     let interpretation
@@ -126,7 +141,7 @@ ${tags?.includes('log-scale') ? '💡 로그 스케일 변환 시 더 강한 선
         spearmanCorr,
         rSquared,
         tags,
-        model: 'gemini-2.5-pro',
+        model: 'gemini-1.5-flash',
         timestamp: new Date().toISOString()
       }
     })
