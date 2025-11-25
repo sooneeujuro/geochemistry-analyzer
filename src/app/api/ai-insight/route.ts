@@ -91,6 +91,8 @@ Analyze the relationship between **${xColumn}** and **${yColumn}**.
 응답은 반드시 다음 JSON 형식으로만 하세요. 설명이나 다른 텍스트 없이 순수 JSON만 출력하세요:
 {"title":"제목","summary":"요약","mechanism":"메커니즘","geological_meaning":"의미","warning":null}`
 
+    console.log('Gemini 요청 시작:', { xColumn, yColumn, pearsonCorr })
+
     const result = await model.generateContent({
       contents: [
         {
@@ -104,8 +106,39 @@ Analyze the relationship between **${xColumn}** and **${yColumn}**.
       }
     })
 
+    // 응답 검증
+    if (!result.response) {
+      console.error('Gemini 응답 없음')
+      return NextResponse.json({
+        success: true,
+        interpretation: {
+          title: `${xColumn} vs ${yColumn} 분석`,
+          summary: 'Gemini로부터 응답을 받지 못했습니다.',
+          mechanism: '잠시 후 다시 시도해주세요.',
+          geological_meaning: '',
+          warning: 'API 응답 없음'
+        }
+      })
+    }
+
     const responseText = result.response.text()
-    console.log('Gemini 원본 응답:', responseText)
+    console.log('Gemini 원본 응답 길이:', responseText?.length)
+    console.log('Gemini 원본 응답:', responseText?.slice(0, 500))
+
+    // 빈 응답 체크
+    if (!responseText || responseText.trim() === '') {
+      console.error('Gemini 빈 응답')
+      return NextResponse.json({
+        success: true,
+        interpretation: {
+          title: `${xColumn} vs ${yColumn} 분석`,
+          summary: 'Gemini로부터 빈 응답을 받았습니다.',
+          mechanism: '잠시 후 다시 시도해주세요.',
+          geological_meaning: '',
+          warning: 'API 빈 응답'
+        }
+      })
+    }
 
     // JSON 파싱 시도 (여러 방법)
     let parsedResult: AIInsightResult
