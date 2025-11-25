@@ -88,17 +88,8 @@ Analyze the relationship between **${xColumn}** and **${yColumn}**.
 2. **Implication:** What does this tell us about the reservoir characteristics, source, or environment?
 3. **Anomalies:** Are there any considerations about outliers or data quality?
 
-## 중요: 반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트 없이 JSON만!
-
-\`\`\`json
-{
-  "title": "이 플롯에 대한 짧은 과학적 제목 (한국어)",
-  "summary": "발견한 내용을 한 문장으로 요약 (한국어)",
-  "mechanism": "이 상관관계를 설명하는 지질학적 과정 설명 (한국어, 2-3문장)",
-  "geological_meaning": "이 데이터가 의미하는 깊은 지질학적 통찰 (한국어, 2-3문장)",
-  "warning": "데이터 품질 문제나 주의사항 (한국어, 없으면 null)"
-}
-\`\`\``
+응답은 반드시 다음 JSON 형식으로만 하세요. 설명이나 다른 텍스트 없이 순수 JSON만 출력하세요:
+{"title":"제목","summary":"요약","mechanism":"메커니즘","geological_meaning":"의미","warning":null}`
 
     const result = await model.generateContent({
       contents: [
@@ -138,9 +129,10 @@ Analyze the relationship between **${xColumn}** and **${yColumn}**.
         }
       } catch {
         // 모든 파싱 실패 시 텍스트로 구조화
+        console.log('JSON 파싱 실패, 원본:', responseText)
         parsedResult = {
           title: `${xColumn} vs ${yColumn} 분석`,
-          summary: responseText.slice(0, 200),
+          summary: '아래 AI 응답을 참고하세요.',
           mechanism: responseText,
           geological_meaning: '',
           warning: undefined
