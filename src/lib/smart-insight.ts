@@ -2,7 +2,38 @@
 
 import * as ss from 'simple-statistics'
 import { GeochemData, StatisticalResult } from '@/types/geochem'
-import { calculateStatistics } from './statistics'
+
+// 순위 계산 함수
+function getRanks(data: number[]): number[] {
+  const sorted = [...data]
+    .map((value, index) => ({ value, index }))
+    .sort((a, b) => a.value - b.value)
+
+  const ranks = new Array(data.length)
+
+  for (let i = 0; i < sorted.length; i++) {
+    ranks[sorted[i].index] = i + 1
+  }
+
+  return ranks
+}
+
+// p-값 간단 계산 (t-분포 근사)
+function calculatePValue(t: number, df: number): number {
+  if (!isFinite(t) || isNaN(t)) return 1
+
+  const absT = Math.abs(t)
+  // 간단한 근사: 큰 t값은 작은 p값
+  const x = df / (df + absT * absT)
+
+  // 간단한 베타 함수 근사
+  if (absT > 10) return 0.0001
+  if (absT > 5) return 0.001
+  if (absT > 3) return 0.01
+  if (absT > 2) return 0.05
+  if (absT > 1.5) return 0.1
+  return 0.5
+}
 
 // Smart Insight 결과 타입들
 export interface InsightCandidate {
@@ -250,6 +281,11 @@ export async function performSmartInsight(
 
   const numericColumns = data.numericColumns
   let totalPairs = 0
+  let skippedLowData = 0
+  let skippedError = 0
+  let skippedLowCorr = 0
+  let skippedHighP = 0
+  let skippedDuplicate = 0
 
   // 상관관계 매트릭스 초기화
   for (const col of numericColumns) {
@@ -268,8 +304,12 @@ export async function performSmartInsight(
       const pairs: { x: number; y: number; type: string }[] = []
 
       for (const row of data.data) {
-        const x = parseFloat(row[xCol])
-        const y = parseFloat(row[yCol])
+        const xVal = row[xCol]
+        const yVal = row[yCol]
+
+        // 숫자 파싱 개선
+        const x = typeof xVal === 'number' ? xVal : parseFloat(String(xVal))
+        const y = typeof yVal === 'number' ? yVal : parseFloat(String(yVal))
 
         if (!isNaN(x) && !isNaN(y) && isFinite(x) && isFinite(y)) {
           const type = includeTypeColumn && selectedTypeColumn
@@ -279,21 +319,49 @@ export async function performSmartInsight(
         }
       }
 
-      if (pairs.length < 10) continue // 최소 10개 데이터 필요
+      if (pairs.length < 10) {
+        skippedLowData++
+        continue
+      }
 
       const xData = pairs.map(p => p.x)
       const yData = pairs.map(p => p.y)
 
-      // 통계 계산
-      const stats = calculateStatistics(xData, yData, ['pearson', 'spearman'])
+      // 통계 계산 - simple-statistics 직접 사용
+      let pearsonCorr = 0
+      let spearmanCorr = 0
+      let rSquared = 0
 
-      if (stats.error) continue
+      try {
+        pearsonCorr = ss.sampleCorrelation(xData, yData)
 
-      const pearsonCorr = stats.pearsonCorr || 0
-      const spearmanCorr = stats.spearmanCorr || 0
-      const pearsonP = stats.pearsonP || 1
-      const spearmanP = stats.spearmanP || 1
-      const rSquared = stats.rSquared || 0
+        // 스피어만: 순위로 변환 후 피어슨
+        const xRanks = getRanks(xData)
+        const yRanks = getRanks(yData)
+        spearmanCorr = ss.sampleCorrelation(xRanks, yRanks)
+
+        // R² 계산
+        const regressionData = pairs.map(p => [p.x, p.y])
+        const regression = ss.linearRegression(regressionData)
+        const regressionLine = ss.linearRegressionLine(regression)
+        rSquared = ss.rSquared(regressionData, regressionLine)
+      } catch (e) {
+        skippedError++
+        continue
+      }
+
+      // NaN 체크
+      if (isNaN(pearsonCorr) || isNaN(spearmanCorr)) {
+        skippedError++
+        continue
+      }
+
+      // p-값 근사 계산
+      const n = xData.length
+      const tPearson = pearsonCorr * Math.sqrt((n - 2) / (1 - pearsonCorr * pearsonCorr))
+      const tSpearman = spearmanCorr * Math.sqrt((n - 2) / (1 - spearmanCorr * spearmanCorr))
+      const pearsonP = calculatePValue(tPearson, n - 2)
+      const spearmanP = calculatePValue(tSpearman, n - 2)
 
       // 상관관계 매트릭스 업데이트
       correlationMatrix[xCol][yCol] = pearsonCorr
@@ -301,12 +369,21 @@ export async function performSmartInsight(
 
       // 필터링 조건
       const absCorr = Math.abs(pearsonCorr)
-      if (absCorr < correlationThreshold) continue
-      if (pearsonP > pValueThreshold && spearmanP > pValueThreshold) continue
+      if (absCorr < correlationThreshold) {
+        skippedLowCorr++
+        continue
+      }
+      if (pearsonP > pValueThreshold && spearmanP > pValueThreshold) {
+        skippedHighP++
+        continue
+      }
 
       // 중복 체크
       const isDuplicate = isDuplicatePair(pearsonCorr, xCol, yCol)
-      if (isDuplicate) continue // 중복은 제외
+      if (isDuplicate) {
+        skippedDuplicate++
+        continue
+      }
 
       // 비선형 관계 탐지
       const nonLinear = detectNonLinearRelationship(pearsonCorr, spearmanCorr)
@@ -331,11 +408,27 @@ export async function performSmartInsight(
         dataCount: pairs.length,
         tags,
         priority,
-        statistics: stats,
+        statistics: {
+          pearsonCorr,
+          spearmanCorr,
+          pearsonP,
+          spearmanP,
+          rSquared
+        },
         chartData: pairs
       })
     }
   }
+
+  console.log('Smart Insight 분석 결과:', {
+    totalPairs,
+    skippedLowData,
+    skippedError,
+    skippedLowCorr,
+    skippedHighP,
+    skippedDuplicate,
+    candidates: candidates.length
+  })
 
   // PCA 추천 분석
   const pcaRecommendations = analyzePCARecommendations(correlationMatrix)
