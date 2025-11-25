@@ -205,11 +205,13 @@ export default function SmartInsight({
 
       {/* 샘플 설명 입력 */}
       <div className="px-6 py-3 bg-purple-50 border-b">
-        <label className="block text-sm font-medium text-purple-800 mb-1">
+        <label htmlFor="sample-description" className="block text-sm font-medium text-purple-800 mb-1">
           샘플 설명 (AI 해석 품질 향상)
         </label>
         <input
           type="text"
+          id="sample-description"
+          name="sample-description"
           value={sampleDescription}
           onChange={(e) => setSampleDescription(e.target.value)}
           placeholder="예: 해저 열수 퇴적물, 화강암 풍화토, 하천 퇴적물 등"
