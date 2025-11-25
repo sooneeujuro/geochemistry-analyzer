@@ -292,6 +292,14 @@ export async function performSmartInsight(
     correlationMatrix[col] = {}
   }
 
+  // 디버그: 데이터 구조 확인
+  console.log('Smart Insight 데이터 구조:', {
+    numericColumns: numericColumns.slice(0, 5),
+    totalRows: data.data.length,
+    sampleRow: data.data[0],
+    sampleRowKeys: data.data[0] ? Object.keys(data.data[0]).slice(0, 10) : []
+  })
+
   // 모든 변수 쌍 분석
   for (let i = 0; i < numericColumns.length; i++) {
     for (let j = i + 1; j < numericColumns.length; j++) {
@@ -317,6 +325,17 @@ export async function performSmartInsight(
             : 'default'
           pairs.push({ x, y, type })
         }
+      }
+
+      // 첫 번째 조합 디버깅
+      if (totalPairs === 1) {
+        console.log('첫 번째 조합 디버그:', {
+          xCol,
+          yCol,
+          pairsFound: pairs.length,
+          sampleXVal: data.data[0]?.[xCol],
+          sampleYVal: data.data[0]?.[yCol]
+        })
       }
 
       if (pairs.length < 10) {
