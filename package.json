@@ -17,6 +17,7 @@
     "mammoth": "^1.10.0",
     "ml-matrix": "^6.12.1",
     "next": "14.0.0",
+    "openai": "^6.9.1",
     "papaparse": "^5.4.1",
     "pca-js": "^1.0.2",
     "react": "^18",

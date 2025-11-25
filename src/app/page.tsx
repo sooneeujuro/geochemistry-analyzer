@@ -5,6 +5,7 @@ import FileUpload from '@/components/FileUpload'
 import DataViewer from '@/components/DataViewer'
 import AnalysisPanel from '@/components/AnalysisPanel'
 import ScanMode from '@/components/ScanMode'
+import SmartInsight from '@/components/SmartInsight'
 import SavedAnalysis from '@/components/SavedAnalysis'
 import MyDataPanel from '@/components/MyDataPanel'
 import AuthModal from '@/components/AuthModal'
@@ -12,10 +13,10 @@ import { useAuth } from '@/contexts/AuthContext'
 import { GeochemData, ColumnSelection, ScanResult, ScanSummary, GraphSettings } from '@/types/geochem'
 import { saveAnalysisSettings, loadSharedAnalysis, loadDatasetMeta, loadFullDataset } from '@/lib/supabase-data'
 import { useSearchParams } from 'next/navigation'
-import { BarChart3, Scan, ArrowLeft, BookOpen, User, LogOut, Star, Database } from 'lucide-react'
+import { BarChart3, Scan, ArrowLeft, BookOpen, User, LogOut, Star, Database, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 
-type Mode = 'analysis' | 'scan' | 'saved' | 'mydata'
+type Mode = 'analysis' | 'scan' | 'smartinsight' | 'saved' | 'mydata'
 
 function HomeContent() {
   const { user, loading, signOut } = useAuth()
@@ -400,6 +401,18 @@ function HomeContent() {
               스캔 모드
             </button>
             <button
+              onClick={() => setMode('smartinsight')}
+              disabled={!data}
+              className={`flex items-center px-5 py-2.5 rounded-lg font-medium transition-all ${
+                mode === 'smartinsight'
+                  ? 'bg-gradient-to-r from-pink-500 to-purple-600 text-white shadow-lg'
+                  : 'bg-white text-gray-700 shadow hover:shadow-md'
+              } ${!data ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              <Sparkles className="h-4 w-4 mr-2" />
+              AI Smart Insight
+            </button>
+            <button
               onClick={() => setMode('saved')}
               className={`flex items-center px-5 py-2.5 rounded-lg font-medium transition-all ${
                 mode === 'saved'
@@ -435,6 +448,24 @@ function HomeContent() {
             </div>
           )}
         </header>
+
+        {/* AI Smart Insight 모드 */}
+        {mode === 'smartinsight' && data && (
+          <SmartInsight
+            data={data}
+            onSelectPair={(xColumn, yColumn) => {
+              setSelectedColumns({
+                x: { type: 'single', numerator: xColumn, label: xColumn },
+                y: { type: 'single', numerator: yColumn, label: yColumn },
+                useTypeColumn: selectedColumns.useTypeColumn,
+                selectedTypeColumn: selectedColumns.selectedTypeColumn
+              })
+              setCameFromScan(true)
+              setMode('analysis')
+            }}
+            selectedTypeColumn={selectedColumns.selectedTypeColumn}
+          />
+        )}
 
         {/* 저장된 분석 모드 */}
         {mode === 'saved' && (
