@@ -34,9 +34,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Gemini 클라이언트 생성
+    // Gemini 클라이언트 생성 (2.5-pro는 thinking에 토큰을 많이 씀)
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' })
 
     const systemPrompt = `당신은 지구화학 데이터 분석 전문가입니다. 주어진 변수 간의 상관관계를 분석하고, 지질학적/지구화학적 의미를 설명해주세요.
 
@@ -82,7 +82,7 @@ ${tags?.includes('log-scale') ? '💡 로그 스케일 변환 시 더 강한 선
       ],
       generationConfig: {
         temperature: 0.7,
-        maxOutputTokens: 1000
+        maxOutputTokens: 16000  // 2.5-pro thinking에 충분한 토큰 확보
       }
     })
 
@@ -144,7 +144,7 @@ ${tags?.includes('log-scale') ? '💡 로그 스케일 변환 시 더 강한 선
         spearmanCorr,
         rSquared,
         tags,
-        model: 'gemini-2.0-flash',
+        model: 'gemini-2.5-pro',
         timestamp: new Date().toISOString()
       }
     })
