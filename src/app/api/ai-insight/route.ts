@@ -4,9 +4,19 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { prompt, xColumn, yColumn, correlation, rSquared, tags, sampleDescription, dataType } = body
+    const {
+      xColumn,
+      yColumn,
+      pearsonCorr,
+      spearmanCorr,
+      rSquared,
+      dataCount,
+      tags,
+      sampleDescription,
+      sampleData
+    } = body
 
-    if (!prompt || !xColumn || !yColumn) {
+    if (!xColumn || !yColumn) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
@@ -27,26 +37,38 @@ export async function POST(request: NextRequest) {
 
     const systemPrompt = `당신은 지구화학 데이터 분석 전문가입니다. 주어진 변수 간의 상관관계를 분석하고, 지질학적/지구화학적 의미를 설명해주세요.
 
-다음 형식으로 응답해주세요:
-1. **핵심 해석** (한 문단): 이 관계의 핵심적인 지질학적 의미
-2. **가능한 원인** (2-3개): 이 상관관계가 나타나는 가능한 지질학적 과정
-3. **추가 분석 제안** (선택적): 더 깊은 이해를 위해 추천하는 추가 분석
+다음 JSON 형식으로만 응답해주세요:
+{"title":"제목","summary":"요약","mechanism":"메커니즘","geological_meaning":"지질학적 의미","warning":null}
 
 전문적이지만 이해하기 쉽게 설명해주세요. 한국어로 응답해주세요.`
 
-    const userPrompt = `
-다음 지구화학 데이터 분석 결과를 해석해주세요:
+    // 샘플 데이터 포맷팅
+    let sampleDataText = ''
+    if (sampleData) {
+      sampleDataText = `
+대표 샘플 포인트:
+- 최소: X=${sampleData.min?.x?.toFixed(4)}, Y=${sampleData.min?.y?.toFixed(4)}
+- 최대: X=${sampleData.max?.x?.toFixed(4)}, Y=${sampleData.max?.y?.toFixed(4)}
+- 중앙값: X=${sampleData.median?.x?.toFixed(4)}, Y=${sampleData.median?.y?.toFixed(4)}`
+    }
 
-${prompt}
+    const userPrompt = `다음 지구화학 데이터 분석 결과를 해석해주세요:
+
+데이터셋: ${sampleDescription || '지구화학 분석 데이터'}
+X축 변수: ${xColumn}
+Y축 변수: ${yColumn}
+데이터 수: ${dataCount || 'N/A'}
+피어슨 상관계수 (R): ${pearsonCorr?.toFixed(4) || 'N/A'}
+스피어만 상관계수 (ρ): ${spearmanCorr?.toFixed(4) || 'N/A'}
+R²: ${rSquared?.toFixed(4) || 'N/A'}
+${sampleDataText}
 
 ${tags?.includes('non-linear') ? `
 ⚠️ 주의: 이 변수 쌍에서 비선형 관계가 감지되었습니다.
 피어슨(선형) 상관계수보다 스피어만(순위) 상관계수가 더 높습니다.
-이는 로그 스케일 관계, 지수 관계, 또는 임계값 효과를 나타낼 수 있습니다.
 ` : ''}
 
-${tags?.includes('log-scale') ? '💡 로그 스케일 변환 시 더 강한 선형 관계를 보일 것으로 예상됩니다.' : ''}
-`
+${tags?.includes('log-scale') ? '💡 로그 스케일 변환 시 더 강한 선형 관계를 보일 것으로 예상됩니다.' : ''}`
 
     const result = await model.generateContent({
       contents: [
@@ -61,7 +83,38 @@ ${tags?.includes('log-scale') ? '💡 로그 스케일 변환 시 더 강한 선
       }
     })
 
-    const interpretation = result.response.text()
+    const responseText = result.response.text()
+
+    // JSON 파싱 시도
+    let interpretation
+    try {
+      interpretation = JSON.parse(responseText)
+    } catch {
+      // JSON 파싱 실패 시 텍스트에서 JSON 추출 시도
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        try {
+          interpretation = JSON.parse(jsonMatch[0])
+        } catch {
+          // 파싱 실패 시 텍스트 그대로 반환
+          interpretation = {
+            title: `${xColumn} vs ${yColumn} 분석`,
+            summary: responseText,
+            mechanism: '',
+            geological_meaning: '',
+            warning: null
+          }
+        }
+      } else {
+        interpretation = {
+          title: `${xColumn} vs ${yColumn} 분석`,
+          summary: responseText,
+          mechanism: '',
+          geological_meaning: '',
+          warning: null
+        }
+      }
+    }
 
     return NextResponse.json({
       success: true,
@@ -69,7 +122,8 @@ ${tags?.includes('log-scale') ? '💡 로그 스케일 변환 시 더 강한 선
       metadata: {
         xColumn,
         yColumn,
-        correlation,
+        pearsonCorr,
+        spearmanCorr,
         rSquared,
         tags,
         model: 'gemini-2.5-pro',
