@@ -6,9 +6,17 @@ import {
   performSmartInsight,
   SmartInsightResult,
   InsightCandidate,
-  InsightTag,
-  formatAIInterpretationRequest
+  InsightTag
 } from '@/lib/smart-insight'
+
+// AI 해석 결과 타입
+interface AIInsightResult {
+  title: string
+  summary: string
+  mechanism: string
+  geological_meaning: string
+  warning?: string | null
+}
 import {
   Brain,
   Sparkles,
@@ -46,10 +54,54 @@ export default function SmartInsight({
   const [isScanning, setIsScanning] = useState(false)
   const [scanResult, setScanResult] = useState<SmartInsightResult | null>(cachedResult || null)
   const [selectedCandidate, setSelectedCandidate] = useState<InsightCandidate | null>(null)
-  const [aiInterpretation, setAiInterpretation] = useState<string | null>(null)
+  const [aiInterpretation, setAiInterpretation] = useState<AIInsightResult | null>(null)
   const [isLoadingAI, setIsLoadingAI] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [sampleDescription, setSampleDescription] = useState('')
+
+  // 샘플 데이터 추출 (min, max, median, outliers)
+  const extractSampleData = (chartData: Array<{ x: number; y: number }>) => {
+    if (!chartData || chartData.length === 0) return null
+
+    // X 기준 정렬
+    const sortedByX = [...chartData].sort((a, b) => a.x - b.x)
+    const sortedByY = [...chartData].sort((a, b) => a.y - b.y)
+
+    const min = sortedByX[0]
+    const max = sortedByX[sortedByX.length - 1]
+    const medianIdx = Math.floor(sortedByX.length / 2)
+    const median = sortedByX[medianIdx]
+
+    // 이상치 찾기: 선형 회귀에서 가장 멀리 떨어진 점들
+    const n = chartData.length
+    const sumX = chartData.reduce((s, p) => s + p.x, 0)
+    const sumY = chartData.reduce((s, p) => s + p.y, 0)
+    const meanX = sumX / n
+    const meanY = sumY / n
+
+    // 간단한 선형 회귀
+    let num = 0, den = 0
+    chartData.forEach(p => {
+      num += (p.x - meanX) * (p.y - meanY)
+      den += (p.x - meanX) ** 2
+    })
+    const slope = den !== 0 ? num / den : 0
+    const intercept = meanY - slope * meanX
+
+    // 잔차(residual) 계산
+    const residuals = chartData.map(p => ({
+      ...p,
+      residual: Math.abs(p.y - (slope * p.x + intercept))
+    }))
+
+    // 잔차가 큰 상위 3개를 이상치로
+    const outliers = residuals
+      .sort((a, b) => b.residual - a.residual)
+      .slice(0, 3)
+      .map(p => ({ x: p.x, y: p.y }))
+
+    return { min, max, median, outliers }
+  }
 
   // 캐시된 결과가 변경되면 동기화
   useEffect(() => {
@@ -90,21 +142,27 @@ export default function SmartInsight({
     setShowModal(true)
 
     try {
-      const prompt = formatAIInterpretationRequest(candidate, sampleDescription)
-      console.log('AI 해석 요청:', { prompt, candidate })
+      // 샘플 데이터 추출
+      const sampleData = extractSampleData(candidate.chartData)
+
+      const requestBody = {
+        xColumn: candidate.xColumn,
+        yColumn: candidate.yColumn,
+        pearsonCorr: candidate.pearsonCorr,
+        spearmanCorr: candidate.spearmanCorr,
+        rSquared: candidate.rSquared,
+        dataCount: candidate.dataCount,
+        tags: candidate.tags,
+        sampleDescription: sampleDescription || 'Geochemical Analysis Data',
+        sampleData
+      }
+
+      console.log('AI 해석 요청:', requestBody)
 
       const response = await fetch('/api/ai-insight', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt,
-          xColumn: candidate.xColumn,
-          yColumn: candidate.yColumn,
-          correlation: candidate.pearsonCorr,
-          rSquared: candidate.rSquared,
-          tags: candidate.tags,
-          sampleDescription
-        })
+        body: JSON.stringify(requestBody)
       })
 
       const result = await response.json()
@@ -113,10 +171,22 @@ export default function SmartInsight({
       if (result.success) {
         setAiInterpretation(result.interpretation)
       } else {
-        setAiInterpretation(`오류: ${result.error}`)
+        setAiInterpretation({
+          title: '오류 발생',
+          summary: result.error || 'AI 해석을 가져오는 중 오류가 발생했습니다.',
+          mechanism: '',
+          geological_meaning: '',
+          warning: null
+        })
       }
     } catch (error) {
-      setAiInterpretation('AI 해석을 가져오는 중 오류가 발생했습니다.')
+      setAiInterpretation({
+        title: '오류 발생',
+        summary: 'AI 해석을 가져오는 중 오류가 발생했습니다.',
+        mechanism: '',
+        geological_meaning: '',
+        warning: null
+      })
     } finally {
       setIsLoadingAI(false)
     }
@@ -475,18 +545,51 @@ export default function SmartInsight({
                 <div className="text-center py-8">
                   <Loader2 className="w-12 h-12 text-purple-500 mx-auto mb-4 animate-spin" />
                   <p className="text-gray-600">AI가 지질학적 해석을 생성하고 있습니다...</p>
+                  <p className="text-gray-400 text-sm mt-2">Gemini 2.5 Pro 분석 중...</p>
                 </div>
               ) : aiInterpretation ? (
-                <div className="prose prose-sm max-w-none">
-                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                    <h4 className="text-purple-800 font-medium mb-2 flex items-center gap-2">
-                      <Sparkles className="w-4 h-4" />
-                      AI 분석 결과
+                <div className="space-y-4">
+                  {/* 제목 */}
+                  <div className="bg-gradient-to-r from-purple-100 to-indigo-100 rounded-lg p-4">
+                    <h4 className="text-lg font-bold text-purple-800 flex items-center gap-2">
+                      <Sparkles className="w-5 h-5" />
+                      {aiInterpretation.title}
                     </h4>
-                    <div className="text-gray-700 whitespace-pre-wrap">
-                      {aiInterpretation}
-                    </div>
+                    <p className="text-gray-700 mt-2">{aiInterpretation.summary}</p>
                   </div>
+
+                  {/* 메커니즘 */}
+                  {aiInterpretation.mechanism && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <h5 className="font-medium text-blue-800 mb-2 flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4" />
+                        지질학적 메커니즘
+                      </h5>
+                      <p className="text-gray-700">{aiInterpretation.mechanism}</p>
+                    </div>
+                  )}
+
+                  {/* 지질학적 의미 */}
+                  {aiInterpretation.geological_meaning && (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                      <h5 className="font-medium text-green-800 mb-2 flex items-center gap-2">
+                        <Brain className="w-4 h-4" />
+                        깊은 통찰
+                      </h5>
+                      <p className="text-gray-700">{aiInterpretation.geological_meaning}</p>
+                    </div>
+                  )}
+
+                  {/* 주의사항 */}
+                  {aiInterpretation.warning && (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                      <h5 className="font-medium text-yellow-800 mb-2 flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4" />
+                        주의사항
+                      </h5>
+                      <p className="text-gray-700">{aiInterpretation.warning}</p>
+                    </div>
+                  )}
                 </div>
               ) : null}
             </div>
