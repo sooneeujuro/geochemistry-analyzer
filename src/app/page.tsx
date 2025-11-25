@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import FileUpload from '@/components/FileUpload'
 import DataViewer from '@/components/DataViewer'
 import AnalysisPanel from '@/components/AnalysisPanel'
@@ -10,14 +10,16 @@ import MyDataPanel from '@/components/MyDataPanel'
 import AuthModal from '@/components/AuthModal'
 import { useAuth } from '@/contexts/AuthContext'
 import { GeochemData, ColumnSelection, ScanResult, ScanSummary, GraphSettings } from '@/types/geochem'
-import { saveAnalysisSettings } from '@/lib/supabase-data'
+import { saveAnalysisSettings, loadSharedAnalysis, loadDatasetMeta, loadFullDataset } from '@/lib/supabase-data'
+import { useSearchParams } from 'next/navigation'
 import { BarChart3, Scan, ArrowLeft, BookOpen, User, LogOut, Star, Database } from 'lucide-react'
 import Link from 'next/link'
 
 type Mode = 'analysis' | 'scan' | 'saved' | 'mydata'
 
-export default function Home() {
+function HomeContent() {
   const { user, loading, signOut } = useAuth()
+  const searchParams = useSearchParams()
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [data, setData] = useState<GeochemData | null>(null)
   const [selectedColumns, setSelectedColumns] = useState<ColumnSelection>({
@@ -35,6 +37,66 @@ export default function Home() {
   const [saveName, setSaveName] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [loadingShared, setLoadingShared] = useState(false)
+  const [sharedError, setSharedError] = useState<string | null>(null)
+
+  // URL에 shared 파라미터가 있으면 공유된 분석 불러오기
+  useEffect(() => {
+    const sharedId = searchParams.get('shared')
+    if (sharedId && !data) {
+      loadSharedData(sharedId)
+    }
+  }, [searchParams])
+
+  const loadSharedData = async (shareId: string) => {
+    setLoadingShared(true)
+    setSharedError(null)
+
+    try {
+      const analysis = await loadSharedAnalysis(shareId)
+      if (!analysis) {
+        setSharedError('공유된 분석을 찾을 수 없거나 비공개 상태입니다.')
+        return
+      }
+
+      const settings = analysis.settings as any
+
+      // 데이터셋이 있으면 로드
+      if (analysis.dataset_id) {
+        const meta = await loadDatasetMeta(analysis.dataset_id)
+        if (meta) {
+          const rows = await loadFullDataset(analysis.dataset_id)
+          const geochemData: GeochemData = {
+            data: rows,
+            numericColumns: meta.numeric_columns,
+            nonNumericColumns: meta.non_numeric_columns,
+            fileName: meta.file_name,
+            typeColumn: meta.type_column,
+            datasetId: analysis.dataset_id,
+            metadata: {
+              fileName: meta.file_name,
+              rowCount: meta.row_count,
+              columnCount: meta.columns.length
+            }
+          }
+          setData(geochemData)
+          setSelectedColumns(settings.selectedColumns)
+          if (settings.graphSettings) {
+            setGraphSettings(settings.graphSettings as GraphSettings)
+          }
+          setMode('analysis')
+        } else {
+          setSharedError('공유된 분석의 데이터셋을 찾을 수 없습니다.')
+        }
+      } else {
+        setSharedError('공유된 분석에 연결된 데이터가 없습니다.')
+      }
+    } catch (err) {
+      setSharedError('공유된 분석 로드 중 오류가 발생했습니다.')
+    } finally {
+      setLoadingShared(false)
+    }
+  }
 
   const handleDataLoad = (newData: GeochemData) => {
     setData(newData)
@@ -125,6 +187,7 @@ export default function Home() {
     try {
       const result = await saveAnalysisSettings({
         name: saveName.trim(),
+        dataset_id: data.datasetId,
         settings: {
           selectedColumns,
           dataFileName: data.fileName,
@@ -221,6 +284,29 @@ export default function Home() {
     <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
       <div className="max-w-7xl mx-auto">
         <header className="text-center mb-8 relative">
+          {/* 공유 링크 로딩 중 */}
+          {loadingShared && (
+            <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center justify-center gap-3">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                <span className="text-blue-700">공유된 분석을 불러오는 중...</span>
+              </div>
+            </div>
+          )}
+
+          {/* 공유 링크 에러 */}
+          {sharedError && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-700 text-center">{sharedError}</p>
+              <button
+                onClick={() => setSharedError(null)}
+                className="mt-2 mx-auto block text-sm text-red-600 hover:underline"
+              >
+                닫기
+              </button>
+            </div>
+          )}
+
           {/* 스캔에서 온 경우 돌아가기 버튼 */}
           {cameFromScan && (
             <div className="flex justify-center mb-6">
@@ -470,5 +556,20 @@ export default function Home() {
         </div>
       )}
     </main>
+  )
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">로딩 중...</p>
+        </div>
+      </div>
+    }>
+      <HomeContent />
+    </Suspense>
   )
 }

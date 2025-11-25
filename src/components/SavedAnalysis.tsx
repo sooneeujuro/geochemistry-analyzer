@@ -136,6 +136,7 @@ export default function SavedAnalysis({
             nonNumericColumns: meta.non_numeric_columns,
             fileName: meta.file_name,
             typeColumn: meta.type_column,
+            datasetId: item.dataset_id,
             metadata: {
               fileName: meta.file_name,
               rowCount: meta.row_count,

@@ -107,7 +107,8 @@ export default function FileUpload({ onDataLoad }: FileUploadProps) {
         const saveResult = await saveDatasetToSupabase(geochemData)
         setIsSaving(false)
 
-        if (saveResult.success) {
+        if (saveResult.success && saveResult.datasetId) {
+          geochemData.datasetId = saveResult.datasetId
           setSuccessMessage(`☁️ 클라우드에 저장됨 (${parsedData.length}행)`)
           loadSavedDatasets() // 목록 새로고침
         } else {
@@ -139,6 +140,7 @@ export default function FileUpload({ onDataLoad }: FileUploadProps) {
         nonNumericColumns: dataset.non_numeric_columns,
         fileName: dataset.file_name,
         typeColumn: dataset.type_column,
+        datasetId: dataset.id,
         metadata: {
           fileName: dataset.file_name,
           rowCount: dataset.row_count,

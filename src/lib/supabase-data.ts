@@ -311,3 +311,26 @@ export async function deleteAnalysisSettings(settingsId: string): Promise<boolea
 
   return !error
 }
+
+/**
+ * 공유된 분석 불러오기 (share_id로 조회)
+ */
+export async function loadSharedAnalysis(shareId: string): Promise<AnalysisSettings | null> {
+  const { data, error } = await supabase
+    .from('user_analysis_settings')
+    .select('*')
+    .eq('share_id', shareId)
+    .eq('is_public', true)
+    .single()
+
+  if (error || !data) return null
+
+  return {
+    id: data.id,
+    name: data.name,
+    dataset_id: data.dataset_id,
+    settings: data.settings,
+    created_at: data.created_at,
+    updated_at: data.updated_at
+  }
+}

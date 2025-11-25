@@ -51,6 +51,7 @@ export default function MyDataPanel({ onLoadData }: MyDataPanelProps) {
         nonNumericColumns: dataset.non_numeric_columns,
         fileName: dataset.file_name,
         typeColumn: dataset.type_column,
+        datasetId: dataset.id,
         metadata: {
           fileName: dataset.file_name,
           rowCount: dataset.row_count,

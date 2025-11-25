@@ -6,6 +6,7 @@ export interface GeochemData {
   typeColumn?: string  // 타입 컬럼 (선택사항)
   metadata?: Record<string, any>  // 메타데이터 (선택사항)
   pcaResult?: PCAResult  // PCA 분석 결과 (선택사항)
+  datasetId?: string  // Supabase 데이터셋 ID (클라우드 저장 시)
 }
 
 export interface StatisticalResult {
