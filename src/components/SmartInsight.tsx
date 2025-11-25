@@ -31,21 +31,32 @@ interface SmartInsightProps {
   selectedTypeColumn?: string
   onSelectPair: (xColumn: string, yColumn: string) => void
   onPCARecommend?: (variables: string[]) => void
+  cachedResult?: SmartInsightResult | null
+  onResultChange?: (result: SmartInsightResult | null) => void
 }
 
 export default function SmartInsight({
   data,
   selectedTypeColumn,
   onSelectPair,
-  onPCARecommend
+  onPCARecommend,
+  cachedResult,
+  onResultChange
 }: SmartInsightProps) {
   const [isScanning, setIsScanning] = useState(false)
-  const [scanResult, setScanResult] = useState<SmartInsightResult | null>(null)
+  const [scanResult, setScanResult] = useState<SmartInsightResult | null>(cachedResult || null)
   const [selectedCandidate, setSelectedCandidate] = useState<InsightCandidate | null>(null)
   const [aiInterpretation, setAiInterpretation] = useState<string | null>(null)
   const [isLoadingAI, setIsLoadingAI] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [sampleDescription, setSampleDescription] = useState('')
+
+  // 캐시된 결과가 변경되면 동기화
+  useEffect(() => {
+    if (cachedResult) {
+      setScanResult(cachedResult)
+    }
+  }, [cachedResult])
 
   // 스캔 실행
   const handleScan = async () => {
@@ -62,6 +73,8 @@ export default function SmartInsight({
       })
 
       setScanResult(result)
+      // 부모 컴포넌트에 결과 전달 (캐싱용)
+      onResultChange?.(result)
     } catch (error) {
       console.error('Smart Insight scan failed:', error)
     } finally {
@@ -78,6 +91,7 @@ export default function SmartInsight({
 
     try {
       const prompt = formatAIInterpretationRequest(candidate, sampleDescription)
+      console.log('AI 해석 요청:', { prompt, candidate })
 
       const response = await fetch('/api/ai-insight', {
         method: 'POST',
@@ -94,6 +108,7 @@ export default function SmartInsight({
       })
 
       const result = await response.json()
+      console.log('AI 해석 응답:', result)
 
       if (result.success) {
         setAiInterpretation(result.interpretation)

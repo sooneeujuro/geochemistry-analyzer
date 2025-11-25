@@ -11,6 +11,7 @@ import MyDataPanel from '@/components/MyDataPanel'
 import AuthModal from '@/components/AuthModal'
 import { useAuth } from '@/contexts/AuthContext'
 import { GeochemData, ColumnSelection, ScanResult, ScanSummary, GraphSettings } from '@/types/geochem'
+import { SmartInsightResult } from '@/lib/smart-insight'
 import { saveAnalysisSettings, loadSharedAnalysis, loadDatasetMeta, loadFullDataset } from '@/lib/supabase-data'
 import { useSearchParams } from 'next/navigation'
 import { BarChart3, Scan, ArrowLeft, BookOpen, User, LogOut, Star, Database, Sparkles } from 'lucide-react'
@@ -31,8 +32,10 @@ function HomeContent() {
   })
   const [mode, setMode] = useState<Mode>('analysis')
   const [cameFromScan, setCameFromScan] = useState(false)
+  const [cameFromSmartInsight, setCameFromSmartInsight] = useState(false)
   const [scanResults, setScanResults] = useState<ScanResult[]>([])
   const [scanSummary, setScanSummary] = useState<ScanSummary | null>(null)
+  const [smartInsightResult, setSmartInsightResult] = useState<SmartInsightResult | null>(null)
   const [graphSettings, setGraphSettings] = useState<GraphSettings | undefined>(undefined)
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [saveName, setSaveName] = useState('')
@@ -104,7 +107,9 @@ function HomeContent() {
     // 새 데이터 로드 시 스캔 결과 초기화
     setScanResults([])
     setScanSummary(null)
+    setSmartInsightResult(null)
     setCameFromScan(false)
+    setCameFromSmartInsight(false)
     setMode('analysis')
 
     if (newData.typeColumn) {
@@ -308,22 +313,27 @@ function HomeContent() {
             </div>
           )}
 
-          {/* 스캔에서 온 경우 돌아가기 버튼 */}
-          {cameFromScan && (
+          {/* 스캔/Smart Insight에서 온 경우 돌아가기 버튼 */}
+          {(cameFromScan || cameFromSmartInsight) && (
             <div className="flex justify-center mb-6">
               <button
                 onClick={() => {
-                  setMode('scan')
-                  setCameFromScan(false)
+                  if (cameFromSmartInsight) {
+                    setMode('smartinsight')
+                    setCameFromSmartInsight(false)
+                  } else {
+                    setMode('scan')
+                    setCameFromScan(false)
+                  }
                 }}
                 className="flex items-center px-6 py-3 text-base font-medium rounded-lg transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
                 style={{
-                  backgroundColor: '#E4815A',
+                  backgroundColor: cameFromSmartInsight ? '#9333ea' : '#E4815A',
                   color: 'white'
                 }}
               >
                 <ArrowLeft className="h-5 w-5 mr-2" />
-                스캔 결과로 돌아가기
+                {cameFromSmartInsight ? 'Smart Insight로 돌아가기' : '스캔 결과로 돌아가기'}
               </button>
             </div>
           )}
@@ -460,10 +470,13 @@ function HomeContent() {
                 useTypeColumn: selectedColumns.useTypeColumn,
                 selectedTypeColumn: selectedColumns.selectedTypeColumn
               })
-              setCameFromScan(true)
+              setCameFromSmartInsight(true)
+              setCameFromScan(false)
               setMode('analysis')
             }}
             selectedTypeColumn={selectedColumns.selectedTypeColumn}
+            cachedResult={smartInsightResult}
+            onResultChange={setSmartInsightResult}
           />
         )}
 
