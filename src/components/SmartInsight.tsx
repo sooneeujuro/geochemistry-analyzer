@@ -40,7 +40,8 @@ interface SmartInsightProps {
   data: GeochemData
   selectedTypeColumn?: string
   onSelectPair: (xColumn: string, yColumn: string) => void
-  onPCARecommend?: (variables: string[]) => void
+  onDataUpdate?: (data: GeochemData) => void  // PCA 결과 반영
+  onModeChange?: (mode: 'analysis' | 'scan') => void  // 분석 모드로 전환
   cachedResult?: SmartInsightResult | null
   onResultChange?: (result: SmartInsightResult | null) => void
 }
@@ -49,7 +50,8 @@ export default function SmartInsight({
   data,
   selectedTypeColumn,
   onSelectPair,
-  onPCARecommend,
+  onDataUpdate,
+  onModeChange,
   cachedResult,
   onResultChange
 }: SmartInsightProps) {
@@ -62,6 +64,7 @@ export default function SmartInsight({
   const [sampleDescription, setSampleDescription] = useState('')
   const [columnClassification, setColumnClassification] = useState<ColumnClassification | null>(null)
   const [isClassifying, setIsClassifying] = useState(false)
+  const [isRunningPCA, setIsRunningPCA] = useState(false)
 
   // 샘플 데이터 추출 (min, max, median, outliers)
   const extractSampleData = (chartData: Array<{ x: number; y: number }>) => {
@@ -105,6 +108,65 @@ export default function SmartInsight({
       .map(p => ({ x: p.x, y: p.y }))
 
     return { min, max, median, outliers }
+  }
+
+  // PCA 분석 실행
+  const runPCAAnalysis = async (variables: string[]) => {
+    if (variables.length < 2) {
+      alert('최소 2개 이상의 변수가 필요합니다.')
+      return
+    }
+
+    setIsRunningPCA(true)
+
+    try {
+      // PCA 분석 실행
+      const { performPCA } = await import('@/lib/statistics')
+      const pcaResult = performPCA(data.data, variables, 2) // 2 주성분 계산
+
+      // PC1, PC2와 클러스터 정보를 데이터에 추가
+      const enhancedData = data.data.map((row: Record<string, any>, index: number) => {
+        const scores = pcaResult.scores[index]
+        return {
+          ...row,
+          PC1: scores ? scores[0] : 0,
+          PC2: scores ? scores[1] : 0,
+          PCA_Cluster: pcaResult.clusters[index] || 0
+        }
+      })
+
+      // 업데이트된 데이터 생성
+      const updatedData: GeochemData = {
+        ...data,
+        data: enhancedData,
+        numericColumns: [...data.numericColumns.filter(col => col !== 'PC1' && col !== 'PC2'), 'PC1', 'PC2'],
+        pcaResult: pcaResult
+      }
+
+      // 부모 컴포넌트에 데이터 업데이트
+      if (onDataUpdate) {
+        onDataUpdate(updatedData)
+      }
+
+      // PC1 vs PC2를 분석 패널에서 선택하도록 전환
+      onSelectPair('PC1', 'PC2')
+
+      // 분석 모드로 전환
+      if (onModeChange) {
+        onModeChange('analysis')
+      }
+
+      // PCA 결과 정보 표시
+      const varianceInfo = `PC1: ${pcaResult.explainedVariance[0]?.toFixed(1)}%, PC2: ${pcaResult.explainedVariance[1]?.toFixed(1)}%`
+      const clusterInfo = `발견된 군집 수: ${Math.max(...pcaResult.clusters) + 1}개`
+
+      alert(`🎉 PCA 분석 완료!\n\n✅ 선택 변수: ${variables.join(', ')}\n📊 설명 분산: ${varianceInfo}\n🎯 ${clusterInfo}\n\n💡 PC1 vs PC2 그래프가 분석 패널에 표시됩니다.`)
+
+    } catch (error) {
+      alert(`❌ PCA 분석 중 오류가 발생했습니다:\n${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsRunningPCA(false)
+    }
   }
 
   // 캐시된 결과가 변경되면 동기화
@@ -395,14 +457,13 @@ export default function SmartInsight({
                           → {rec.correlatedVariables.length}개 변수와 높은 상관관계
                         </span>
                       </div>
-                      {onPCARecommend && (
-                        <button
-                          onClick={() => onPCARecommend([rec.variable, ...rec.correlatedVariables])}
-                          className="px-3 py-1 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
-                        >
-                          PCA 분석
-                        </button>
-                      )}
+                      <button
+                        onClick={() => runPCAAnalysis([rec.variable, ...rec.correlatedVariables].slice(0, 8))}
+                        disabled={isRunningPCA}
+                        className="px-3 py-1 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isRunningPCA ? '분석 중...' : '🚀 PCA 실행'}
+                      </button>
                     </div>
                     <p className="text-sm text-gray-600 mt-1">{rec.reason}</p>
                   </div>

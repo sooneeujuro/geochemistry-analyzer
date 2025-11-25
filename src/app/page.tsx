@@ -474,6 +474,12 @@ function HomeContent() {
               setCameFromScan(false)
               setMode('analysis')
             }}
+            onDataUpdate={handleDataUpdate}
+            onModeChange={(newMode) => {
+              setCameFromSmartInsight(true)
+              setCameFromScan(false)
+              setMode(newMode)
+            }}
             selectedTypeColumn={selectedColumns.selectedTypeColumn}
             cachedResult={smartInsightResult}
             onResultChange={setSmartInsightResult}
