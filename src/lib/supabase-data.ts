@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { GeochemData } from '@/types/geochem'
+import { GeochemData, ColumnSelection } from '@/types/geochem'
 
 // 데이터셋 저장 결과 타입
 export interface SaveDatasetResult {
@@ -27,17 +27,43 @@ export interface DatasetMeta {
   numeric_columns: string[]
   non_numeric_columns: string[]
   type_column?: string
+  user_id?: string
+}
+
+// 분석 설정 타입
+export interface AnalysisSettings {
+  id?: string
+  name: string
+  dataset_id?: string
+  settings: {
+    selectedColumns: ColumnSelection
+    graphSettings?: {
+      showTrendline?: boolean
+      showTypeTrends?: Record<string, boolean>
+      zoomLevel?: number
+    }
+  }
+  created_at?: string
+  updated_at?: string
+}
+
+/**
+ * 현재 로그인한 사용자 ID 가져오기
+ */
+async function getCurrentUserId(): Promise<string | null> {
+  const { data: { user } } = await supabase.auth.getUser()
+  return user?.id || null
 }
 
 /**
  * 지구화학 데이터를 Supabase에 저장
- * - 메타데이터는 geochem_datasets 테이블에
- * - 각 행은 geochem_data_rows 테이블에 개별 저장
  */
 export async function saveDatasetToSupabase(
   data: GeochemData
 ): Promise<SaveDatasetResult> {
   try {
+    const userId = await getCurrentUserId()
+
     // 1. 메타데이터 저장
     const { data: dataset, error: metaError } = await supabase
       .from('geochem_datasets')
@@ -47,7 +73,8 @@ export async function saveDatasetToSupabase(
         columns: [...data.numericColumns, ...data.nonNumericColumns],
         numeric_columns: data.numericColumns,
         non_numeric_columns: data.nonNumericColumns,
-        type_column: data.typeColumn || null
+        type_column: data.typeColumn || null,
+        user_id: userId
       })
       .select('id')
       .single()
@@ -155,12 +182,13 @@ export async function loadDatasetMeta(datasetId: string): Promise<DatasetMeta | 
     columns: data.columns || [],
     numeric_columns: data.numeric_columns || [],
     non_numeric_columns: data.non_numeric_columns || [],
-    type_column: data.type_column
+    type_column: data.type_column,
+    user_id: data.user_id
   }
 }
 
 /**
- * 저장된 모든 데이터셋 목록 가져오기
+ * 저장된 데이터셋 목록 가져오기 (로그인 시 본인 것만, 비로그인 시 공개 데이터)
  */
 export async function listDatasets(): Promise<DatasetMeta[]> {
   const { data, error } = await supabase
@@ -180,7 +208,8 @@ export async function listDatasets(): Promise<DatasetMeta[]> {
     columns: d.columns || [],
     numeric_columns: d.numeric_columns || [],
     non_numeric_columns: d.non_numeric_columns || [],
-    type_column: d.type_column
+    type_column: d.type_column,
+    user_id: d.user_id
   }))
 }
 
@@ -197,7 +226,7 @@ export async function deleteDataset(datasetId: string): Promise<boolean> {
 }
 
 /**
- * 전체 데이터 로드 (분석용 - 작은 데이터셋에만 사용)
+ * 전체 데이터 로드 (분석용)
  */
 export async function loadFullDataset(datasetId: string): Promise<Record<string, any>[]> {
   const { data, error } = await supabase
@@ -211,4 +240,77 @@ export async function loadFullDataset(datasetId: string): Promise<Record<string,
   }
 
   return data?.map(r => r.data) || []
+}
+
+/**
+ * 분석 설정 저장
+ */
+export async function saveAnalysisSettings(
+  settings: Omit<AnalysisSettings, 'id' | 'created_at' | 'updated_at'>
+): Promise<{ success: boolean; id?: string; error?: string }> {
+  try {
+    const userId = await getCurrentUserId()
+    if (!userId) {
+      return { success: false, error: '로그인이 필요합니다.' }
+    }
+
+    const { data, error } = await supabase
+      .from('user_analysis_settings')
+      .insert({
+        user_id: userId,
+        dataset_id: settings.dataset_id || null,
+        name: settings.name,
+        settings: settings.settings
+      })
+      .select('id')
+      .single()
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    return { success: true, id: data.id }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : '저장 실패'
+    }
+  }
+}
+
+/**
+ * 분석 설정 목록 가져오기
+ */
+export async function listAnalysisSettings(): Promise<AnalysisSettings[]> {
+  const userId = await getCurrentUserId()
+  if (!userId) return []
+
+  const { data, error } = await supabase
+    .from('user_analysis_settings')
+    .select('*')
+    .eq('user_id', userId)
+    .order('updated_at', { ascending: false })
+
+  if (error || !data) return []
+
+  return data.map(d => ({
+    id: d.id,
+    name: d.name,
+    dataset_id: d.dataset_id,
+    settings: d.settings,
+    created_at: d.created_at,
+    updated_at: d.updated_at
+  }))
+}
+
+/**
+ * 분석 설정 삭제
+ */
+export async function deleteAnalysisSettings(settingsId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('user_analysis_settings')
+    .delete()
+    .eq('id', settingsId)
+
+  return !error
 }

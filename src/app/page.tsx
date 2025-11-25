@@ -5,11 +5,15 @@ import FileUpload from '@/components/FileUpload'
 import DataViewer from '@/components/DataViewer'
 import AnalysisPanel from '@/components/AnalysisPanel'
 import ScanMode from '@/components/ScanMode'
+import AuthModal from '@/components/AuthModal'
+import { useAuth } from '@/contexts/AuthContext'
 import { GeochemData, ColumnSelection, ScanResult, ScanSummary } from '@/types/geochem'
-import { BarChart3, Scan, ArrowLeft, BookOpen } from 'lucide-react'
+import { BarChart3, Scan, ArrowLeft, BookOpen, User, LogOut } from 'lucide-react'
 import Link from 'next/link'
 
 export default function Home() {
+  const { user, loading, signOut } = useAuth()
+  const [showAuthModal, setShowAuthModal] = useState(false)
   const [data, setData] = useState<GeochemData | null>(null)
   const [selectedColumns, setSelectedColumns] = useState<ColumnSelection>({
     x: null,
@@ -137,6 +141,34 @@ export default function Home() {
             </div>
           )}
           
+          {/* 상단 로그인 버튼 */}
+          <div className="absolute top-4 right-4 flex items-center gap-2">
+            {loading ? (
+              <div className="animate-pulse bg-gray-200 h-10 w-24 rounded-lg"></div>
+            ) : user ? (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-600 bg-white px-3 py-2 rounded-lg shadow">
+                  {user.email?.split('@')[0]}
+                </span>
+                <button
+                  onClick={() => signOut()}
+                  className="flex items-center gap-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                  title="로그아웃"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowAuthModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-white text-gray-700 rounded-lg shadow hover:shadow-md transition-all"
+              >
+                <User className="w-4 h-4" />
+                <span className="font-medium">로그인</span>
+              </button>
+            )}
+          </div>
+
           <div className="flex items-center justify-center gap-4 mb-2">
             <h1 className="text-4xl font-bold text-gray-800">
               지구화학 데이터 분석기
@@ -231,6 +263,9 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {/* 로그인 모달 */}
+      <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
     </main>
   )
 } 
