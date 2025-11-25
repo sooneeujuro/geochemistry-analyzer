@@ -10,6 +10,9 @@ export interface AIInsightResult {
   warning?: string
 }
 
+// 모델 우선순위 (첫 번째가 실패하면 다음 모델 시도)
+const MODEL_PRIORITY = ['gemini-1.5-flash', 'gemini-1.5-pro']
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -32,19 +35,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // API 키 확인
-    if (!process.env.GEMINI_API_KEY) {
+    // API 키 확인 (GEMINI_API_KEY 또는 GOOGLE_AI_API_KEY)
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY
+    if (!apiKey) {
       return NextResponse.json(
-        { error: 'Gemini API 키가 설정되지 않았습니다. 환경 변수 GEMINI_API_KEY를 확인해주세요.' },
+        { error: 'Gemini API 키가 설정되지 않았습니다. 환경 변수 GEMINI_API_KEY 또는 GOOGLE_AI_API_KEY를 확인해주세요.' },
         { status: 500 }
       )
     }
 
     // Gemini 클라이언트 생성
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-pro',
-      systemInstruction: `You are an expert Geochemist and Data Scientist specializing in hydrothermal systems, mantle geochemistry, and volatile isotope analysis.
+    const genAI = new GoogleGenerativeAI(apiKey)
+
+    const systemPrompt = `You are an expert Geochemist and Data Scientist specializing in hydrothermal systems, mantle geochemistry, and volatile isotope analysis.
 Your goal is to interpret statistical relationships between geochemical variables and provide scientific insights.
 
 When analyzing data:
@@ -53,7 +56,6 @@ When analyzing data:
 3. Be skeptical: If a correlation is high but geologically nonsensical, point it out as a potential artifact or coincidence.
 4. Use academic terminology but keep explanations concise and clear for researchers.
 5. Always respond in Korean (한국어로 응답하세요).`
-    })
 
     // 관계 타입 결정
     const isNonLinear = tags?.includes('non-linear')
@@ -88,57 +90,68 @@ Analyze the relationship between **${xColumn}** and **${yColumn}**.
 2. **Implication:** What does this tell us about the reservoir characteristics, source, or environment?
 3. **Anomalies:** Are there any considerations about outliers or data quality?
 
-응답은 반드시 다음 JSON 형식으로만 하세요. 설명이나 다른 텍스트 없이 순수 JSON만 출력하세요:
+응답은 반드시 다음 JSON 형식으로만 하세요:
 {"title":"제목","summary":"요약","mechanism":"메커니즘","geological_meaning":"의미","warning":null}`
 
     console.log('Gemini 요청 시작:', { xColumn, yColumn, pearsonCorr })
 
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: userPrompt }]
-        }
-      ],
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 1500
-      }
-    })
+    // 여러 모델 시도
+    let responseText = ''
+    let usedModel = ''
 
-    // 응답 검증
-    if (!result.response) {
-      console.error('Gemini 응답 없음')
+    for (const modelName of MODEL_PRIORITY) {
+      try {
+        console.log(`모델 ${modelName} 시도 중...`)
+
+        const model = genAI.getGenerativeModel({
+          model: modelName,
+          systemInstruction: systemPrompt
+        })
+
+        const result = await model.generateContent({
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: userPrompt }]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 1500
+          }
+        })
+
+        if (result.response) {
+          responseText = result.response.text()
+          if (responseText && responseText.trim() !== '') {
+            usedModel = modelName
+            console.log(`모델 ${modelName} 성공, 응답 길이: ${responseText.length}`)
+            break
+          }
+        }
+        console.log(`모델 ${modelName} 빈 응답, 다음 모델 시도`)
+      } catch (modelError) {
+        console.log(`모델 ${modelName} 실패:`, modelError)
+        continue
+      }
+    }
+
+    // 모든 모델 실패 시
+    if (!responseText || responseText.trim() === '') {
+      console.error('모든 Gemini 모델 실패')
       return NextResponse.json({
         success: true,
         interpretation: {
           title: `${xColumn} vs ${yColumn} 분석`,
-          summary: 'Gemini로부터 응답을 받지 못했습니다.',
-          mechanism: '잠시 후 다시 시도해주세요.',
+          summary: 'Gemini API로부터 응답을 받지 못했습니다.',
+          mechanism: '잠시 후 다시 시도해주세요. API 키가 올바른지 확인해주세요.',
           geological_meaning: '',
           warning: 'API 응답 없음'
         }
       })
     }
 
-    const responseText = result.response.text()
-    console.log('Gemini 원본 응답 길이:', responseText?.length)
     console.log('Gemini 원본 응답:', responseText?.slice(0, 500))
-
-    // 빈 응답 체크
-    if (!responseText || responseText.trim() === '') {
-      console.error('Gemini 빈 응답')
-      return NextResponse.json({
-        success: true,
-        interpretation: {
-          title: `${xColumn} vs ${yColumn} 분석`,
-          summary: 'Gemini로부터 빈 응답을 받았습니다.',
-          mechanism: '잠시 후 다시 시도해주세요.',
-          geological_meaning: '',
-          warning: 'API 빈 응답'
-        }
-      })
-    }
 
     // JSON 파싱 시도 (여러 방법)
     let parsedResult: AIInsightResult
@@ -183,7 +196,7 @@ Analyze the relationship between **${xColumn}** and **${yColumn}**.
         spearmanCorr,
         rSquared,
         tags,
-        model: 'gemini-2.5-pro',
+        model: usedModel,
         timestamp: new Date().toISOString()
       }
     })
