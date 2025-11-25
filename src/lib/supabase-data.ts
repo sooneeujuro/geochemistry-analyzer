@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { GeochemData, ColumnSelection } from '@/types/geochem'
+import { GeochemData, ColumnSelection, GraphSettings } from '@/types/geochem'
 
 // 데이터셋 저장 결과 타입
 export interface SaveDatasetResult {
@@ -38,11 +38,7 @@ export interface AnalysisSettings {
   settings: {
     selectedColumns: ColumnSelection
     dataFileName?: string
-    graphSettings?: {
-      showTrendline?: boolean
-      showTypeTrends?: Record<string, boolean>
-      zoomLevel?: number
-    }
+    graphSettings?: Partial<GraphSettings>
   }
   created_at?: string
   updated_at?: string

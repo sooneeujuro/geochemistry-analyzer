@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect, useRef } from 'react'
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell, LabelList, ErrorBar, Customized } from 'recharts'
-import { GeochemData, StatisticalResult, ColumnSelection, ChartStyleOptions, PlotStyleOptions } from '@/types/geochem'
+import { GeochemData, StatisticalResult, ColumnSelection, ChartStyleOptions, PlotStyleOptions, GraphSettings, ReferenceImage as ReferenceImageType, CustomAxisRange as CustomAxisRangeType, TrendlineStyle, ErrorBarSettings } from '@/types/geochem'
 import { Settings, Palette, Move3D, Download, Shapes, Eye, EyeOff, ZoomIn, ZoomOut, TrendingUp, TrendingDown, AlertTriangle, Image as ImageIcon, Upload, Trash2, Eye as EyeIcon, Crop as CropIcon, Check, X } from 'lucide-react'
 import { standardDeviation } from 'simple-statistics'
 import { createWorker } from 'tesseract.js'
@@ -25,6 +25,8 @@ interface ScatterPlotProps {
     slope?: number
     intercept?: number
   }>
+  initialGraphSettings?: Partial<GraphSettings>
+  onSettingsChange?: (settings: GraphSettings) => void
 }
 
 // 축 범위 타입 직접 정의
@@ -112,27 +114,25 @@ const CustomMarker = (props: any) => {
   }
 }
 
-export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMode = false, clusterData = [], typeStatistics = [] }: ScatterPlotProps) {
-  const chartRef = useRef<HTMLDivElement>(null)
-  
-  const [styleOptions, setStyleOptions] = useState<ChartStyleOptions>({
+// 기본 그래프 설정값
+const defaultGraphSettings: GraphSettings = {
+  axisRange: { xMin: 'auto', xMax: 'auto', yMin: 'auto', yMax: 'auto' },
+  xLogScale: false,
+  yLogScale: false,
+  xTickInterval: 'auto',
+  yTickInterval: 'auto',
+  invertXAxis: false,
+  invertYAxis: false,
+  maintain1to1Ratio: false,
+  chartAspectRatio: null,
+  styleOptions: {
     numberFormat: 'normal',
     fontFamily: 'Arial',
     axisTitleBold: true,
     axisNumberSize: 12,
     axisTitleSize: 14
-  })
-
-  const [xNumberFormat, setXNumberFormat] = useState<'normal' | 'scientific' | 'comma'>('normal')
-  const [yNumberFormat, setYNumberFormat] = useState<'normal' | 'scientific' | 'comma'>('normal')
-  const [xExponentialFormat, setXExponentialFormat] = useState<'standard' | 'superscript'>('standard')
-  const [yExponentialFormat, setYExponentialFormat] = useState<'standard' | 'superscript'>('standard')
-  const [xDecimalPlaces, setXDecimalPlaces] = useState(2) // X축 소수점 자릿수
-  const [yDecimalPlaces, setYDecimalPlaces] = useState(2) // Y축 소수점 자릿수
-  const [xAxisLabelOffset, setXAxisLabelOffset] = useState(-50)
-  const [yAxisLabelOffset, setYAxisLabelOffset] = useState(-10)
-  
-  const [plotOptions, setPlotOptions] = useState<PlotStyleOptions>({
+  },
+  plotOptions: {
     size: 60,
     shape: 'circle',
     opacity: 0.7,
@@ -140,42 +140,79 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
     strokeColor: '#000000',
     useCustomColors: false,
     customColors: ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#F97316', '#06B6D4', '#84CC16']
-  })
+  },
+  trendlineStyle: { color: '#FF0000', strokeWidth: 2, opacity: 0.8 },
+  backgroundColor: '#FFFFFF',
+  showGridlines: true,
+  show1to1Line: false,
+  showChartTitle: false,
+  chartTitle: '',
+  showDataLabels: false,
+  labelFontSize: 10,
+  xNumberFormat: 'normal',
+  yNumberFormat: 'normal',
+  xExponentialFormat: 'standard',
+  yExponentialFormat: 'standard',
+  xDecimalPlaces: 2,
+  yDecimalPlaces: 2,
+  xAxisLabelOffset: -50,
+  yAxisLabelOffset: -10,
+  xErrorBar: { enabled: false, mode: 'percentage', column: '', value: 5 },
+  yErrorBar: { enabled: false, mode: 'percentage', column: '', value: 5 },
+  showOverallTrend: true,
+  showTypeTrends: {},
+  showAllTypeTrends: false,
+  visibleTypes: {},
+  useVisibleDataRange: false,
+  referenceImages: []
+}
 
-  const [showGridlines, setShowGridlines] = useState(true)
-  const [backgroundColor, setBackgroundColor] = useState('#FFFFFF')
-  const [visibleTypes, setVisibleTypes] = useState<Record<string, boolean>>({})
-  const [useVisibleDataRange, setUseVisibleDataRange] = useState(false)
-  const [showOverallTrend, setShowOverallTrend] = useState(true)
-  const [showTypeTrends, setShowTypeTrends] = useState<Record<string, boolean>>({})
-  const [showAllTypeTrends, setShowAllTypeTrends] = useState(false)
-  
-  const [trendlineStyle, setTrendlineStyle] = useState({
-    color: '#FF0000',
-    strokeWidth: 2,
-    opacity: 0.8
-  })
+export { defaultGraphSettings }
 
-  const [axisRange, setAxisRange] = useState<CustomAxisRange>({
-    xMin: 'auto',
-    xMax: 'auto',
-    yMin: 'auto',
-    yMax: 'auto'
-  })
+export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMode = false, clusterData = [], typeStatistics = [], initialGraphSettings, onSettingsChange }: ScatterPlotProps) {
+  const chartRef = useRef<HTMLDivElement>(null)
 
-  const [xLogScale, setXLogScale] = useState(false)
-  const [yLogScale, setYLogScale] = useState(false)
-  const [maintain1to1Ratio, setMaintain1to1Ratio] = useState(false)
-  const [chartAspectRatio, setChartAspectRatio] = useState<number | null>(null) // 차트 가로세로 비율 (null = auto)
-  const [xTickInterval, setXTickInterval] = useState<number | 'auto'>('auto')
-  const [yTickInterval, setYTickInterval] = useState<number | 'auto'>('auto')
-  const [show1to1Line, setShow1to1Line] = useState(false)
-  const [chartTitle, setChartTitle] = useState('')
-  const [showChartTitle, setShowChartTitle] = useState(false)
-  const [invertXAxis, setInvertXAxis] = useState(false)
-  const [invertYAxis, setInvertYAxis] = useState(false)
-  const [showDataLabels, setShowDataLabels] = useState(false)
-  const [labelFontSize, setLabelFontSize] = useState(10)
+  // initialGraphSettings에서 초기값 가져오기
+  const initSettings = { ...defaultGraphSettings, ...initialGraphSettings }
+
+  const [styleOptions, setStyleOptions] = useState<ChartStyleOptions>(initSettings.styleOptions)
+
+  const [xNumberFormat, setXNumberFormat] = useState<'normal' | 'scientific' | 'comma'>(initSettings.xNumberFormat)
+  const [yNumberFormat, setYNumberFormat] = useState<'normal' | 'scientific' | 'comma'>(initSettings.yNumberFormat)
+  const [xExponentialFormat, setXExponentialFormat] = useState<'standard' | 'superscript'>(initSettings.xExponentialFormat)
+  const [yExponentialFormat, setYExponentialFormat] = useState<'standard' | 'superscript'>(initSettings.yExponentialFormat)
+  const [xDecimalPlaces, setXDecimalPlaces] = useState(initSettings.xDecimalPlaces)
+  const [yDecimalPlaces, setYDecimalPlaces] = useState(initSettings.yDecimalPlaces)
+  const [xAxisLabelOffset, setXAxisLabelOffset] = useState(initSettings.xAxisLabelOffset)
+  const [yAxisLabelOffset, setYAxisLabelOffset] = useState(initSettings.yAxisLabelOffset)
+
+  const [plotOptions, setPlotOptions] = useState<PlotStyleOptions>(initSettings.plotOptions)
+
+  const [showGridlines, setShowGridlines] = useState(initSettings.showGridlines)
+  const [backgroundColor, setBackgroundColor] = useState(initSettings.backgroundColor)
+  const [visibleTypes, setVisibleTypes] = useState<Record<string, boolean>>(initSettings.visibleTypes)
+  const [useVisibleDataRange, setUseVisibleDataRange] = useState(initSettings.useVisibleDataRange)
+  const [showOverallTrend, setShowOverallTrend] = useState(initSettings.showOverallTrend)
+  const [showTypeTrends, setShowTypeTrends] = useState<Record<string, boolean>>(initSettings.showTypeTrends)
+  const [showAllTypeTrends, setShowAllTypeTrends] = useState(initSettings.showAllTypeTrends)
+
+  const [trendlineStyle, setTrendlineStyle] = useState(initSettings.trendlineStyle)
+
+  const [axisRange, setAxisRange] = useState<CustomAxisRange>(initSettings.axisRange)
+
+  const [xLogScale, setXLogScale] = useState(initSettings.xLogScale)
+  const [yLogScale, setYLogScale] = useState(initSettings.yLogScale)
+  const [maintain1to1Ratio, setMaintain1to1Ratio] = useState(initSettings.maintain1to1Ratio)
+  const [chartAspectRatio, setChartAspectRatio] = useState<number | null>(initSettings.chartAspectRatio)
+  const [xTickInterval, setXTickInterval] = useState<number | 'auto'>(initSettings.xTickInterval)
+  const [yTickInterval, setYTickInterval] = useState<number | 'auto'>(initSettings.yTickInterval)
+  const [show1to1Line, setShow1to1Line] = useState(initSettings.show1to1Line)
+  const [chartTitle, setChartTitle] = useState(initSettings.chartTitle)
+  const [showChartTitle, setShowChartTitle] = useState(initSettings.showChartTitle)
+  const [invertXAxis, setInvertXAxis] = useState(initSettings.invertXAxis)
+  const [invertYAxis, setInvertYAxis] = useState(initSettings.invertYAxis)
+  const [showDataLabels, setShowDataLabels] = useState(initSettings.showDataLabels)
+  const [labelFontSize, setLabelFontSize] = useState(initSettings.labelFontSize)
 
   const [showStylePanel, setShowStylePanel] = useState(false)
   const [showPlotPanel, setShowPlotPanel] = useState(false)
@@ -184,7 +221,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
   const [showReferencePanel, setShowReferencePanel] = useState(false)
 
   // 레퍼런스 이미지 관련 state
-  const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([])
+  const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>(initSettings.referenceImages as ReferenceImage[])
   const [ocrProcessing, setOcrProcessing] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -212,15 +249,70 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
   const magnifierRef = useRef<HTMLCanvasElement>(null)
 
   // 오차범위 설정
-  const [xErrorBarEnabled, setXErrorBarEnabled] = useState(false)
-  const [xErrorBarMode, setXErrorBarMode] = useState<'column' | 'percentage' | 'fixed' | 'stddev' | 'stderr'>('percentage')
-  const [xErrorBarColumn, setXErrorBarColumn] = useState<string>('')
-  const [xErrorBarValue, setXErrorBarValue] = useState(5)
+  const [xErrorBarEnabled, setXErrorBarEnabled] = useState(initSettings.xErrorBar.enabled)
+  const [xErrorBarMode, setXErrorBarMode] = useState<'column' | 'percentage' | 'fixed' | 'stddev' | 'stderr'>(initSettings.xErrorBar.mode)
+  const [xErrorBarColumn, setXErrorBarColumn] = useState<string>(initSettings.xErrorBar.column)
+  const [xErrorBarValue, setXErrorBarValue] = useState(initSettings.xErrorBar.value)
 
-  const [yErrorBarEnabled, setYErrorBarEnabled] = useState(false)
-  const [yErrorBarMode, setYErrorBarMode] = useState<'column' | 'percentage' | 'fixed' | 'stddev' | 'stderr'>('percentage')
-  const [yErrorBarColumn, setYErrorBarColumn] = useState<string>('')
-  const [yErrorBarValue, setYErrorBarValue] = useState(5)
+  const [yErrorBarEnabled, setYErrorBarEnabled] = useState(initSettings.yErrorBar.enabled)
+  const [yErrorBarMode, setYErrorBarMode] = useState<'column' | 'percentage' | 'fixed' | 'stddev' | 'stderr'>(initSettings.yErrorBar.mode)
+  const [yErrorBarColumn, setYErrorBarColumn] = useState<string>(initSettings.yErrorBar.column)
+  const [yErrorBarValue, setYErrorBarValue] = useState(initSettings.yErrorBar.value)
+
+  // 현재 그래프 설정을 GraphSettings 객체로 반환하는 함수
+  const getCurrentSettings = (): GraphSettings => ({
+    axisRange,
+    xLogScale,
+    yLogScale,
+    xTickInterval,
+    yTickInterval,
+    invertXAxis,
+    invertYAxis,
+    maintain1to1Ratio,
+    chartAspectRatio,
+    styleOptions,
+    plotOptions,
+    trendlineStyle,
+    backgroundColor,
+    showGridlines,
+    show1to1Line,
+    showChartTitle,
+    chartTitle,
+    showDataLabels,
+    labelFontSize,
+    xNumberFormat,
+    yNumberFormat,
+    xExponentialFormat,
+    yExponentialFormat,
+    xDecimalPlaces,
+    yDecimalPlaces,
+    xAxisLabelOffset,
+    yAxisLabelOffset,
+    xErrorBar: { enabled: xErrorBarEnabled, mode: xErrorBarMode, column: xErrorBarColumn, value: xErrorBarValue },
+    yErrorBar: { enabled: yErrorBarEnabled, mode: yErrorBarMode, column: yErrorBarColumn, value: yErrorBarValue },
+    showOverallTrend,
+    showTypeTrends,
+    showAllTypeTrends,
+    visibleTypes,
+    useVisibleDataRange,
+    referenceImages: referenceImages as ReferenceImageType[]
+  })
+
+  // 설정 변경시 콜백 호출
+  useEffect(() => {
+    if (onSettingsChange) {
+      onSettingsChange(getCurrentSettings())
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    axisRange, xLogScale, yLogScale, xTickInterval, yTickInterval, invertXAxis, invertYAxis,
+    maintain1to1Ratio, chartAspectRatio, styleOptions, plotOptions, trendlineStyle, backgroundColor,
+    showGridlines, show1to1Line, showChartTitle, chartTitle, showDataLabels, labelFontSize,
+    xNumberFormat, yNumberFormat, xExponentialFormat, yExponentialFormat, xDecimalPlaces, yDecimalPlaces,
+    xAxisLabelOffset, yAxisLabelOffset, xErrorBarEnabled, xErrorBarMode, xErrorBarColumn, xErrorBarValue,
+    yErrorBarEnabled, yErrorBarMode, yErrorBarColumn, yErrorBarValue, showOverallTrend, showTypeTrends,
+    showAllTypeTrends, visibleTypes, useVisibleDataRange, referenceImages
+  ])
 
   // 레퍼런스 이미지 OCR 처리
   const processImageWithOCR = async (imageData: string): Promise<{ xMin: number; xMax: number; yMin: number; yMax: number } | null> => {

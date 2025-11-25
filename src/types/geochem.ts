@@ -123,6 +123,102 @@ export interface PCASuggestion {
   confidence: number
 }
 
+// 레퍼런스 이미지 타입
+export interface ReferenceImage {
+  id: string
+  name: string
+  imageData: string // base64
+  naturalWidth: number
+  naturalHeight: number
+  cropX: number
+  cropY: number
+  cropWidth: number
+  cropHeight: number
+  xMin: number
+  xMax: number
+  yMin: number
+  yMax: number
+  opacity: number
+  visible: boolean
+}
+
+// 축 범위 타입
+export interface CustomAxisRange {
+  xMin: number | 'auto'
+  xMax: number | 'auto'
+  yMin: number | 'auto'
+  yMax: number | 'auto'
+}
+
+// 추세선 스타일
+export interface TrendlineStyle {
+  color: string
+  strokeWidth: number
+  opacity: number
+}
+
+// 오차바 설정
+export interface ErrorBarSettings {
+  enabled: boolean
+  mode: 'column' | 'percentage' | 'fixed' | 'stddev' | 'stderr'
+  column: string
+  value: number
+}
+
+// 전체 그래프 설정 타입
+export interface GraphSettings {
+  // 축 설정
+  axisRange: CustomAxisRange
+  xLogScale: boolean
+  yLogScale: boolean
+  xTickInterval: number | 'auto'
+  yTickInterval: number | 'auto'
+  invertXAxis: boolean
+  invertYAxis: boolean
+  maintain1to1Ratio: boolean
+  chartAspectRatio: number | null
+
+  // 스타일 옵션
+  styleOptions: ChartStyleOptions
+  plotOptions: PlotStyleOptions
+  trendlineStyle: TrendlineStyle
+  backgroundColor: string
+
+  // 표시 옵션
+  showGridlines: boolean
+  show1to1Line: boolean
+  showChartTitle: boolean
+  chartTitle: string
+  showDataLabels: boolean
+  labelFontSize: number
+
+  // 숫자 형식
+  xNumberFormat: 'normal' | 'scientific' | 'comma'
+  yNumberFormat: 'normal' | 'scientific' | 'comma'
+  xExponentialFormat: 'standard' | 'superscript'
+  yExponentialFormat: 'standard' | 'superscript'
+  xDecimalPlaces: number
+  yDecimalPlaces: number
+  xAxisLabelOffset: number
+  yAxisLabelOffset: number
+
+  // 오차바
+  xErrorBar: ErrorBarSettings
+  yErrorBar: ErrorBarSettings
+
+  // 추세선
+  showOverallTrend: boolean
+  showTypeTrends: Record<string, boolean>
+  showAllTypeTrends: boolean
+
+  // 가시성
+  visibleTypes: Record<string, boolean>
+  useVisibleDataRange: boolean
+
+  // 레퍼런스 이미지
+  referenceImages: ReferenceImage[]
+}
+
 // GPT 4o 대피소 관련 타입들
 export interface ChatMessage {
   id: string

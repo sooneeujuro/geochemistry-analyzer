@@ -9,7 +9,8 @@ import SavedAnalysis from '@/components/SavedAnalysis'
 import MyDataPanel from '@/components/MyDataPanel'
 import AuthModal from '@/components/AuthModal'
 import { useAuth } from '@/contexts/AuthContext'
-import { GeochemData, ColumnSelection, ScanResult, ScanSummary } from '@/types/geochem'
+import { GeochemData, ColumnSelection, ScanResult, ScanSummary, GraphSettings } from '@/types/geochem'
+import { saveAnalysisSettings } from '@/lib/supabase-data'
 import { BarChart3, Scan, ArrowLeft, BookOpen, User, LogOut, Star, Database } from 'lucide-react'
 import Link from 'next/link'
 
@@ -29,6 +30,11 @@ export default function Home() {
   const [cameFromScan, setCameFromScan] = useState(false)
   const [scanResults, setScanResults] = useState<ScanResult[]>([])
   const [scanSummary, setScanSummary] = useState<ScanSummary | null>(null)
+  const [graphSettings, setGraphSettings] = useState<GraphSettings | undefined>(undefined)
+  const [showSaveModal, setShowSaveModal] = useState(false)
+  const [saveName, setSaveName] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const handleDataLoad = (newData: GeochemData) => {
     setData(newData)
@@ -82,10 +88,62 @@ export default function Home() {
   }
 
   // 저장된 분석 로드
-  const handleLoadAnalysis = (loadedData: GeochemData, loadedSettings: ColumnSelection) => {
+  const handleLoadAnalysis = (loadedData: GeochemData, loadedSettings: ColumnSelection, loadedGraphSettings?: Partial<GraphSettings>) => {
     setData(loadedData)
     setSelectedColumns(loadedSettings)
+    if (loadedGraphSettings) {
+      setGraphSettings(loadedGraphSettings as GraphSettings)
+    }
     setMode('analysis')
+  }
+
+  // 현재 분석 저장 (플롯 옆 버튼에서 호출)
+  const handleSaveAnalysis = async () => {
+    if (!user) {
+      setShowAuthModal(true)
+      return
+    }
+    setShowSaveModal(true)
+    setSaveName('')
+    setSaveError(null)
+  }
+
+  // 실제 저장 처리
+  const handleConfirmSave = async () => {
+    if (!saveName.trim()) {
+      setSaveError('이름을 입력해주세요')
+      return
+    }
+    if (!data) {
+      setSaveError('저장할 데이터가 없습니다')
+      return
+    }
+
+    setSaving(true)
+    setSaveError(null)
+
+    try {
+      const result = await saveAnalysisSettings({
+        name: saveName.trim(),
+        settings: {
+          selectedColumns,
+          dataFileName: data.fileName,
+          graphSettings: graphSettings
+        }
+      })
+
+      if (result.success) {
+        setShowSaveModal(false)
+        setSaveName('')
+        alert('분석이 저장되었습니다!')
+      } else {
+        setSaveError(result.error || '저장 실패')
+      }
+    } catch (err) {
+      setSaveError('저장 중 오류 발생')
+    } finally {
+      setSaving(false)
+    }
   }
 
   // 스캔 모드 렌더링
@@ -328,6 +386,9 @@ export default function Home() {
                 <AnalysisPanel
                   data={data}
                   selectedColumns={selectedColumns}
+                  graphSettings={graphSettings}
+                  onGraphSettingsChange={setGraphSettings}
+                  onSaveAnalysis={handleSaveAnalysis}
                 />
               </div>
             )}
@@ -337,6 +398,77 @@ export default function Home() {
 
       {/* 로그인 모달 */}
       <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
+
+      {/* 분석 저장 모달 */}
+      {showSaveModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            <div className="bg-gradient-to-r from-yellow-500 to-orange-500 px-6 py-4 flex justify-between items-center">
+              <h3 className="text-lg font-bold text-white flex items-center">
+                <Star className="h-5 w-5 mr-2" />
+                분석 저장
+              </h3>
+              <button
+                onClick={() => setShowSaveModal(false)}
+                className="text-white hover:text-gray-200 text-xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="p-6">
+              {saveError && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                  {saveError}
+                </div>
+              )}
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  분석 이름
+                </label>
+                <input
+                  type="text"
+                  value={saveName}
+                  onChange={(e) => setSaveName(e.target.value)}
+                  placeholder="예: SiO2 vs MgO 상관분석"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
+                  autoFocus
+                />
+              </div>
+
+              <div className="mb-4 p-3 bg-gray-50 rounded-lg text-sm">
+                <p className="text-gray-600 font-medium mb-2">저장될 정보:</p>
+                <ul className="space-y-1 text-gray-500">
+                  <li>• X축: {selectedColumns.x?.label || '미선택'}</li>
+                  <li>• Y축: {selectedColumns.y?.label || '미선택'}</li>
+                  <li>• 데이터: {data?.fileName || '없음'}</li>
+                  <li>• 그래프 설정: {graphSettings ? '포함' : '기본값'}</li>
+                  {graphSettings?.referenceImages && graphSettings.referenceImages.length > 0 && (
+                    <li>• 레퍼런스 이미지: {graphSettings.referenceImages.length}개</li>
+                  )}
+                </ul>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowSaveModal(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  취소
+                </button>
+                <button
+                  onClick={handleConfirmSave}
+                  disabled={saving || !saveName.trim()}
+                  className="flex-1 px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                >
+                  {saving ? '저장 중...' : '저장'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }

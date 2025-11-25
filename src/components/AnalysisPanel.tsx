@@ -1,16 +1,19 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { GeochemData, StatisticalResult, ColumnSelection } from '@/types/geochem'
+import { GeochemData, StatisticalResult, ColumnSelection, GraphSettings } from '@/types/geochem'
 import { calculateStatistics } from '@/lib/statistics'
 import ScatterPlot from './ScatterPlot'
 import PCAResultsTable from './PCAResultsTable'
-import { Activity, TrendingUp, BarChart, Users, Target } from 'lucide-react'
+import { Activity, TrendingUp, BarChart, Users, Target, Star } from 'lucide-react'
 import { generatePCAInterpretation, PCAInterpretationRequest, PCAInterpretation } from '@/lib/ai-recommendations'
 
 interface AnalysisPanelProps {
   data: GeochemData
   selectedColumns: ColumnSelection
+  graphSettings?: Partial<GraphSettings>
+  onGraphSettingsChange?: (settings: GraphSettings) => void
+  onSaveAnalysis?: () => void
 }
 
 // 타입별 통계 결과 인터페이스
@@ -27,7 +30,7 @@ interface TypeStatisticsResult {
   pValue?: number
 }
 
-export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelProps) {
+export default function AnalysisPanel({ data, selectedColumns, graphSettings, onGraphSettingsChange, onSaveAnalysis }: AnalysisPanelProps) {
   const [statistics, setStatistics] = useState<StatisticalResult | null>(null)
   const [typeStatistics, setTypeStatistics] = useState<TypeStatisticsResult[]>([])
   const [loading, setLoading] = useState(false)
@@ -304,12 +307,25 @@ export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelPr
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* 산점도 */}
             <div className="lg:col-span-2">
+              {/* 저장 버튼 */}
+              {onSaveAnalysis && (
+                <div className="flex justify-end mb-2">
+                  <button
+                    onClick={onSaveAnalysis}
+                    className="flex items-center gap-2 px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 shadow-md hover:shadow-lg transition-all"
+                    title="현재 분석 설정 저장"
+                  >
+                    <Star className="h-4 w-4" />
+                    <span className="font-medium">현재 분석 저장</span>
+                  </button>
+                </div>
+              )}
               {(() => {
-                const isPCAMode = selectedColumns.x?.numerator === 'PC1' && 
-                                  selectedColumns.y?.numerator === 'PC2' && 
+                const isPCAMode = selectedColumns.x?.numerator === 'PC1' &&
+                                  selectedColumns.y?.numerator === 'PC2' &&
                                   data.pcaResult !== undefined
                 const clusterData = data.pcaResult?.clusters || []
-                
+
                 return (
                   <ScatterPlot
                     data={data}
@@ -318,6 +334,8 @@ export default function AnalysisPanel({ data, selectedColumns }: AnalysisPanelPr
                     isPCAMode={isPCAMode}
                     clusterData={clusterData}
                     typeStatistics={typeStatistics}
+                    initialGraphSettings={graphSettings}
+                    onSettingsChange={onGraphSettingsChange}
                   />
                 )
               })()}

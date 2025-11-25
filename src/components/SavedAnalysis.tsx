@@ -12,12 +12,12 @@ import {
   AnalysisSettings
 } from '@/lib/supabase-data'
 import { supabase } from '@/lib/supabase'
-import { GeochemData, ColumnSelection } from '@/types/geochem'
+import { GeochemData, ColumnSelection, GraphSettings } from '@/types/geochem'
 
 interface SavedAnalysisProps {
   currentData: GeochemData | null
   currentSettings: ColumnSelection
-  onLoadAnalysis: (data: GeochemData, settings: ColumnSelection) => void
+  onLoadAnalysis: (data: GeochemData, settings: ColumnSelection, graphSettings?: Partial<GraphSettings>) => void
 }
 
 export default function SavedAnalysis({
@@ -123,6 +123,7 @@ export default function SavedAnalysis({
     try {
       // 설정에서 데이터 파일명이 있으면 해당 데이터도 로드 시도
       const settings = item.settings as any
+      const graphSettings = settings.graphSettings as Partial<GraphSettings> | undefined
 
       if (item.dataset_id) {
         // dataset_id가 있으면 해당 데이터셋 로드
@@ -141,14 +142,14 @@ export default function SavedAnalysis({
               columnCount: meta.columns.length
             }
           }
-          onLoadAnalysis(geochemData, settings.selectedColumns)
+          onLoadAnalysis(geochemData, settings.selectedColumns, graphSettings)
           return
         }
       }
 
       // 데이터 없이 설정만 적용 (현재 데이터 유지)
       if (currentData) {
-        onLoadAnalysis(currentData, settings.selectedColumns)
+        onLoadAnalysis(currentData, settings.selectedColumns, graphSettings)
       } else {
         setError('먼저 데이터를 업로드해주세요')
       }
