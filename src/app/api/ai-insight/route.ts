@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import OpenAI from 'openai'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,17 +14,16 @@ export async function POST(request: NextRequest) {
     }
 
     // API 키 확인
-    if (!process.env.OPENAI_API_KEY) {
+    if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
-        { error: 'OpenAI API 키가 설정되지 않았습니다. 환경 변수 OPENAI_API_KEY를 확인해주세요.' },
+        { error: 'Gemini API 키가 설정되지 않았습니다. 환경 변수 GEMINI_API_KEY를 확인해주세요.' },
         { status: 500 }
       )
     }
 
-    // 런타임에 클라이언트 생성
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY
-    })
+    // Gemini 클라이언트 생성
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
     const systemPrompt = `당신은 지구화학 데이터 분석 전문가입니다. 주어진 변수 간의 상관관계를 분석하고, 지질학적/지구화학적 의미를 설명해주세요.
 
@@ -49,17 +48,20 @@ ${tags?.includes('non-linear') ? `
 ${tags?.includes('log-scale') ? '💡 로그 스케일 변환 시 더 강한 선형 관계를 보일 것으로 예상됩니다.' : ''}
 `
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
+    const result = await model.generateContent({
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }]
+        }
       ],
-      temperature: 0.7,
-      max_tokens: 1000
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 1000
+      }
     })
 
-    const interpretation = completion.choices[0]?.message?.content || ''
+    const interpretation = result.response.text()
 
     return NextResponse.json({
       success: true,
@@ -70,7 +72,7 @@ ${tags?.includes('log-scale') ? '💡 로그 스케일 변환 시 더 강한 선
         correlation,
         rSquared,
         tags,
-        model: 'gpt-4o-mini',
+        model: 'gemini-2.0-flash',
         timestamp: new Date().toISOString()
       }
     })
@@ -78,10 +80,10 @@ ${tags?.includes('log-scale') ? '💡 로그 스케일 변환 시 더 강한 선
   } catch (error) {
     console.error('AI Insight API Error:', error)
 
-    // OpenAI API 키 오류 처리
+    // Gemini API 키 오류 처리
     if (error instanceof Error && error.message.includes('API key')) {
       return NextResponse.json(
-        { error: 'OpenAI API 키가 설정되지 않았습니다.' },
+        { error: 'Gemini API 키가 설정되지 않았습니다.' },
         { status: 500 }
       )
     }
