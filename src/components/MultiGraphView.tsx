@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
-import { GeochemData } from '@/types/geochem'
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
+import { GeochemData, AxisConfig, MultiViewPanel, MultiViewAxisRange } from '@/types/geochem'
+import html2canvas from 'html2canvas'
 import {
   ScatterChart,
   Scatter,
@@ -16,49 +17,203 @@ import {
 import {
   Plus,
   X,
-  Trash2,
-  MousePointer2,
-  Move,
   RotateCcw,
   Eye,
   EyeOff,
-  Layers
+  Layers,
+  ChevronDown,
+  ChevronUp,
+  Download
 } from 'lucide-react'
 
-interface GraphPanel {
-  id: string
-  xColumn: string | null
-  yColumn: string | null
-}
+// GraphPanel은 MultiViewPanel 타입 사용
+type GraphPanel = MultiViewPanel
 
 interface MultiGraphViewProps {
   data: GeochemData
+  initialPanels?: MultiViewPanel[]  // 외부에서 설정 가져오기
 }
 
-export default function MultiGraphView({ data }: MultiGraphViewProps) {
-  // 그래프 패널 상태 (최대 3개)
-  const [panels, setPanels] = useState<GraphPanel[]>([
-    { id: '1', xColumn: null, yColumn: null }
-  ])
+// 축 선택 컴포넌트
+function AxisSelector({
+  axis,
+  label,
+  value,
+  columns,
+  onChange
+}: {
+  axis: 'x' | 'y'
+  label: string
+  value: AxisConfig | null
+  columns: string[]
+  onChange: (config: AxisConfig | null) => void
+}) {
+  const [axisType, setAxisType] = useState<'single' | 'ratio'>(value?.type || 'single')
+  const [ratioTemp, setRatioTemp] = useState({ numerator: '', denominator: '' })
+  const [isExpanded, setIsExpanded] = useState(false)
+
+  // 외부 value 변경 시 동기화
+  useEffect(() => {
+    if (value) {
+      setAxisType(value.type)
+      if (value.type === 'ratio' && value.denominator) {
+        setRatioTemp({ numerator: value.numerator, denominator: value.denominator })
+      }
+    }
+  }, [value])
+
+  const handleTypeChange = (type: 'single' | 'ratio') => {
+    setAxisType(type)
+    onChange(null)
+    setRatioTemp({ numerator: '', denominator: '' })
+  }
+
+  const handleSingleSelect = (column: string) => {
+    if (column) {
+      onChange({ type: 'single', numerator: column, label: column })
+    } else {
+      onChange(null)
+    }
+  }
+
+  const handleRatioSelect = (part: 'numerator' | 'denominator', column: string) => {
+    const newRatio = { ...ratioTemp, [part]: column }
+    setRatioTemp(newRatio)
+
+    if (newRatio.numerator && newRatio.denominator) {
+      onChange({
+        type: 'ratio',
+        numerator: newRatio.numerator,
+        denominator: newRatio.denominator,
+        label: `${newRatio.numerator}/${newRatio.denominator}`
+      })
+    } else {
+      onChange(null)
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <label className="text-xs font-medium text-gray-600">{label}</label>
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
+        >
+          {axisType === 'ratio' ? '비율' : '단일'}
+          {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+        </button>
+      </div>
+
+      {isExpanded && (
+        <div className="flex gap-1 mb-2">
+          <button
+            onClick={() => handleTypeChange('single')}
+            className={`flex-1 px-2 py-1 text-xs rounded ${
+              axisType === 'single'
+                ? 'bg-teal-600 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            단일 변수
+          </button>
+          <button
+            onClick={() => handleTypeChange('ratio')}
+            className={`flex-1 px-2 py-1 text-xs rounded ${
+              axisType === 'ratio'
+                ? 'bg-teal-600 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            비율 (A/B)
+          </button>
+        </div>
+      )}
+
+      {axisType === 'single' ? (
+        <select
+          value={value?.type === 'single' ? value.numerator : ''}
+          onChange={(e) => handleSingleSelect(e.target.value)}
+          className="w-full px-2 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-teal-500"
+        >
+          <option value="">선택...</option>
+          {columns.map(col => (
+            <option key={col} value={col}>{col}</option>
+          ))}
+        </select>
+      ) : (
+        <div className="space-y-1">
+          <select
+            value={ratioTemp.numerator}
+            onChange={(e) => handleRatioSelect('numerator', e.target.value)}
+            className="w-full px-2 py-1 text-xs border rounded focus:ring-2 focus:ring-teal-500"
+          >
+            <option value="">분자 선택...</option>
+            {columns.map(col => (
+              <option key={col} value={col}>{col}</option>
+            ))}
+          </select>
+          <div className="text-center text-gray-400 text-xs">÷</div>
+          <select
+            value={ratioTemp.denominator}
+            onChange={(e) => handleRatioSelect('denominator', e.target.value)}
+            className="w-full px-2 py-1 text-xs border rounded focus:ring-2 focus:ring-teal-500"
+          >
+            <option value="">분모 선택...</option>
+            {columns.map(col => (
+              <option key={col} value={col}>{col}</option>
+            ))}
+          </select>
+          {ratioTemp.numerator && ratioTemp.denominator && (
+            <div className="text-center text-xs text-teal-600 font-medium">
+              = {ratioTemp.numerator}/{ratioTemp.denominator}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const MAX_PANELS = 4
+
+export default function MultiGraphView({ data, initialPanels }: MultiGraphViewProps) {
+  // 그래프 패널 상태 (최대 4개)
+  const [panels, setPanels] = useState<GraphPanel[]>(
+    initialPanels || [{ id: '1', xAxis: null, yAxis: null }]
+  )
 
   // 선택된 시료 인덱스들 (모든 그래프에서 공유)
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set())
+
+  // 그래프 컨테이너 ref (이미지 내보내기용)
+  const graphContainerRef = useRef<HTMLDivElement>(null)
+  const [isExporting, setIsExporting] = useState(false)
 
   // 드래그 선택 상태
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState<{ x: number; y: number; panelId: string } | null>(null)
   const [dragEnd, setDragEnd] = useState<{ x: number; y: number } | null>(null)
 
-  // 선택 모드: 'click' | 'brush'
-  const [selectionMode, setSelectionMode] = useState<'click' | 'brush'>('brush')
+  // 클릭과 드래그 모두 활성화 (드래그 거리로 구분)
 
   // 하이라이트 표시 여부
   const [showHighlight, setShowHighlight] = useState(true)
 
+  // 호버된 시료 인덱스 (모든 그래프에서 동기화)
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
+
+  // initialPanels가 변경되면 업데이트
+  useEffect(() => {
+    if (initialPanels && initialPanels.length > 0) {
+      setPanels(initialPanels)
+    }
+  }, [initialPanels])
+
   // 패널 추가
   const addPanel = () => {
-    if (panels.length >= 3) return
-    setPanels([...panels, { id: Date.now().toString(), xColumn: null, yColumn: null }])
+    if (panels.length >= MAX_PANELS) return
+    setPanels([...panels, { id: Date.now().toString(), xAxis: null, yAxis: null }])
   }
 
   // 패널 제거
@@ -68,12 +223,41 @@ export default function MultiGraphView({ data }: MultiGraphViewProps) {
   }
 
   // 패널 축 변경
-  const updatePanelAxis = (panelId: string, axis: 'x' | 'y', column: string) => {
+  const updatePanelAxis = (panelId: string, axis: 'x' | 'y', config: AxisConfig | null) => {
     setPanels(panels.map(p =>
       p.id === panelId
-        ? { ...p, [axis === 'x' ? 'xColumn' : 'yColumn']: column }
+        ? { ...p, [axis === 'x' ? 'xAxis' : 'yAxis']: config }
         : p
     ))
+  }
+
+  // 패널 축 범위 변경
+  const updatePanelAxisRange = (panelId: string, range: Partial<MultiViewAxisRange>) => {
+    setPanels(panels.map(p =>
+      p.id === panelId
+        ? { ...p, axisRange: { ...p.axisRange, ...range } }
+        : p
+    ))
+  }
+
+  // 축 도메인 계산
+  const getAxisDomain = (panel: GraphPanel, axis: 'x' | 'y', chartData: any[]): [number | 'auto', number | 'auto'] => {
+    const range = panel.axisRange
+    const minKey = axis === 'x' ? 'xMin' : 'yMin'
+    const maxKey = axis === 'x' ? 'xMax' : 'yMax'
+    const dataKey = axis
+
+    const min = range?.[minKey]
+    const max = range?.[maxKey]
+
+    const dataValues = chartData.map(d => d[dataKey]).filter(v => v !== null && v !== undefined)
+    const dataMin = Math.min(...dataValues)
+    const dataMax = Math.max(...dataValues)
+
+    return [
+      min !== undefined && min !== 'auto' ? min : dataMin,
+      max !== undefined && max !== 'auto' ? max : dataMax
+    ]
   }
 
   // 선택 초기화
@@ -81,12 +265,50 @@ export default function MultiGraphView({ data }: MultiGraphViewProps) {
     setSelectedIndices(new Set())
   }
 
-  // 시료 클릭 핸들러
+  // 이미지로 내보내기
+  const exportAsImage = async () => {
+    if (!graphContainerRef.current || isExporting) return
+
+    setIsExporting(true)
+    try {
+      const canvas = await html2canvas(graphContainerRef.current, {
+        backgroundColor: '#ffffff',
+        scale: 2, // 고해상도
+        logging: false,
+        useCORS: true
+      })
+
+      const link = document.createElement('a')
+      link.download = `multiview-comparison-${new Date().toISOString().slice(0, 10)}.png`
+      link.href = canvas.toDataURL('image/png')
+      link.click()
+    } catch (error) {
+      console.error('이미지 내보내기 실패:', error)
+      alert('이미지 내보내기에 실패했습니다.')
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  // 데이터 값 계산 (단일 또는 비율)
+  const getAxisValue = useCallback((row: Record<string, any>, config: AxisConfig): number | null => {
+    if (config.type === 'single') {
+      const val = parseFloat(String(row[config.numerator]))
+      return isNaN(val) ? null : val
+    } else {
+      const num = parseFloat(String(row[config.numerator]))
+      const den = parseFloat(String(row[config.denominator!]))
+      if (isNaN(num) || isNaN(den) || den === 0) return null
+      return num / den
+    }
+  }, [])
+
+  // 시료 클릭 핸들러 (드래그 중이 아닐 때만)
   const handlePointClick = (index: number, event: React.MouseEvent) => {
-    if (selectionMode !== 'click') return
+    // 드래그 중이면 클릭 무시
+    if (isDragging) return
 
     if (event.ctrlKey || event.metaKey) {
-      // Ctrl/Cmd + 클릭: 토글
       setSelectedIndices(prev => {
         const newSet = new Set(prev)
         if (newSet.has(index)) {
@@ -97,16 +319,14 @@ export default function MultiGraphView({ data }: MultiGraphViewProps) {
         return newSet
       })
     } else if (event.shiftKey) {
-      // Shift + 클릭: 추가
       setSelectedIndices(prev => new Set([...Array.from(prev), index]))
     } else {
-      // 일반 클릭: 단일 선택
       setSelectedIndices(new Set([index]))
     }
   }
 
   // 드래그 선택 완료 핸들러
-  const handleBrushEnd = useCallback((panelId: string, xColumn: string, yColumn: string) => {
+  const handleBrushEnd = useCallback((panelId: string, xAxis: AxisConfig, yAxis: AxisConfig) => {
     if (!dragStart || !dragEnd || dragStart.panelId !== panelId) return
 
     const minX = Math.min(dragStart.x, dragEnd.x)
@@ -114,12 +334,11 @@ export default function MultiGraphView({ data }: MultiGraphViewProps) {
     const minY = Math.min(dragStart.y, dragEnd.y)
     const maxY = Math.max(dragStart.y, dragEnd.y)
 
-    // 범위 내 시료 찾기
     const indicesInRange = new Set<number>()
     data.data.forEach((row, index) => {
-      const x = parseFloat(String(row[xColumn]))
-      const y = parseFloat(String(row[yColumn]))
-      if (!isNaN(x) && !isNaN(y) && x >= minX && x <= maxX && y >= minY && y <= maxY) {
+      const x = getAxisValue(row, xAxis)
+      const y = getAxisValue(row, yAxis)
+      if (x !== null && y !== null && x >= minX && x <= maxX && y >= minY && y <= maxY) {
         indicesInRange.add(index)
       }
     })
@@ -128,21 +347,22 @@ export default function MultiGraphView({ data }: MultiGraphViewProps) {
     setDragStart(null)
     setDragEnd(null)
     setIsDragging(false)
-  }, [dragStart, dragEnd, data.data])
+  }, [dragStart, dragEnd, data.data, getAxisValue])
 
   // 그래프 데이터 생성
-  const getChartData = useCallback((xColumn: string, yColumn: string) => {
+  const getChartData = useCallback((xAxis: AxisConfig, yAxis: AxisConfig) => {
     return data.data.map((row, index) => {
-      const x = parseFloat(String(row[xColumn]))
-      const y = parseFloat(String(row[yColumn]))
+      const x = getAxisValue(row, xAxis)
+      const y = getAxisValue(row, yAxis)
       return {
-        x: isNaN(x) ? null : x,
-        y: isNaN(y) ? null : y,
+        x,
+        y,
         index,
-        isSelected: selectedIndices.has(index)
+        isSelected: selectedIndices.has(index),
+        isHovered: hoveredIndex === index
       }
     }).filter(d => d.x !== null && d.y !== null)
-  }, [data.data, selectedIndices])
+  }, [data.data, selectedIndices, hoveredIndex, getAxisValue])
 
   // 선택된 시료 정보
   const selectionInfo = useMemo(() => {
@@ -152,7 +372,7 @@ export default function MultiGraphView({ data }: MultiGraphViewProps) {
   }, [selectedIndices, data.data.length])
 
   return (
-    <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+    <div className="bg-white rounded-lg shadow-lg overflow-hidden select-none">
       {/* 헤더 */}
       <div className="bg-gradient-to-r from-teal-600 to-cyan-600 px-6 py-4">
         <div className="flex items-center justify-between">
@@ -167,32 +387,6 @@ export default function MultiGraphView({ data }: MultiGraphViewProps) {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* 선택 모드 토글 */}
-            <div className="flex bg-white/20 rounded-lg p-1">
-              <button
-                onClick={() => setSelectionMode('brush')}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-                  selectionMode === 'brush'
-                    ? 'bg-white text-teal-700'
-                    : 'text-white hover:bg-white/10'
-                }`}
-              >
-                <Move className="w-4 h-4" />
-                드래그
-              </button>
-              <button
-                onClick={() => setSelectionMode('click')}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-                  selectionMode === 'click'
-                    ? 'bg-white text-teal-700'
-                    : 'text-white hover:bg-white/10'
-                }`}
-              >
-                <MousePointer2 className="w-4 h-4" />
-                클릭
-              </button>
-            </div>
-
             {/* 하이라이트 토글 */}
             <button
               onClick={() => setShowHighlight(!showHighlight)}
@@ -219,11 +413,23 @@ export default function MultiGraphView({ data }: MultiGraphViewProps) {
             {/* 패널 추가 */}
             <button
               onClick={addPanel}
-              disabled={panels.length >= 3}
+              disabled={panels.length >= MAX_PANELS}
               className="flex items-center gap-1 px-4 py-1.5 bg-white text-teal-700 rounded-lg text-sm font-medium hover:bg-teal-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              title={panels.length >= MAX_PANELS ? `최대 ${MAX_PANELS}개까지 비교 가능` : '그래프 추가'}
             >
               <Plus className="w-4 h-4" />
-              그래프 추가
+              그래프 추가 ({panels.length}/{MAX_PANELS})
+            </button>
+
+            {/* 이미지 내보내기 */}
+            <button
+              onClick={exportAsImage}
+              disabled={isExporting || panels.every(p => !p.xAxis || !p.yAxis)}
+              className="flex items-center gap-1 px-4 py-1.5 bg-white text-teal-700 rounded-lg text-sm font-medium hover:bg-teal-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              title="그래프를 이미지로 내보내기"
+            >
+              <Download className="w-4 h-4" />
+              {isExporting ? '내보내는 중...' : '이미지 저장'}
             </button>
           </div>
         </div>
@@ -237,18 +443,22 @@ export default function MultiGraphView({ data }: MultiGraphViewProps) {
               🎯 선택된 시료: {selectionInfo.count}개 / {selectionInfo.total}개 ({selectionInfo.percentage}%)
             </span>
             <span className="text-teal-600 text-sm">
-              {selectionMode === 'click' ? 'Ctrl+클릭으로 추가 선택' : '드래그로 영역 선택'}
+              드래그로 영역 선택 / Ctrl+클릭으로 개별 선택
             </span>
           </div>
         </div>
       )}
 
       {/* 그래프 패널들 */}
-      <div className={`p-6 grid gap-4 ${
-        panels.length === 1 ? 'grid-cols-1' :
-        panels.length === 2 ? 'grid-cols-2' :
-        'grid-cols-3'
-      }`}>
+      <div
+        ref={graphContainerRef}
+        className={`p-6 grid gap-4 bg-white ${
+          panels.length === 1 ? 'grid-cols-1' :
+          panels.length === 2 ? 'grid-cols-2' :
+          panels.length === 3 ? 'grid-cols-3' :
+          'grid-cols-2'  // 4개일 때 2x2
+        }`}
+      >
         {panels.map((panel, panelIndex) => (
           <div key={panel.id} className="border rounded-lg overflow-hidden">
             {/* 패널 헤더 */}
@@ -265,43 +475,70 @@ export default function MultiGraphView({ data }: MultiGraphViewProps) {
             </div>
 
             {/* 축 선택 */}
-            <div className="p-4 bg-gray-50 border-b grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">X축</label>
-                <select
-                  value={panel.xColumn || ''}
-                  onChange={(e) => updatePanelAxis(panel.id, 'x', e.target.value)}
-                  className="w-full px-2 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-teal-500"
-                >
-                  <option value="">선택...</option>
-                  {data.numericColumns.map(col => (
-                    <option key={col} value={col}>{col}</option>
-                  ))}
-                </select>
+            <div className="p-4 bg-gray-50 border-b">
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <AxisSelector
+                  axis="x"
+                  label="X축"
+                  value={panel.xAxis}
+                  columns={data.numericColumns}
+                  onChange={(config) => updatePanelAxis(panel.id, 'x', config)}
+                />
+                <AxisSelector
+                  axis="y"
+                  label="Y축"
+                  value={panel.yAxis}
+                  columns={data.numericColumns}
+                  onChange={(config) => updatePanelAxis(panel.id, 'y', config)}
+                />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Y축</label>
-                <select
-                  value={panel.yColumn || ''}
-                  onChange={(e) => updatePanelAxis(panel.id, 'y', e.target.value)}
-                  className="w-full px-2 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-teal-500"
-                >
-                  <option value="">선택...</option>
-                  {data.numericColumns.map(col => (
-                    <option key={col} value={col}>{col}</option>
-                  ))}
-                </select>
-              </div>
+              {/* 축 범위 설정 */}
+              {panel.xAxis && panel.yAxis && (
+                <div className="grid grid-cols-4 gap-2 text-xs">
+                  <input
+                    type="number"
+                    placeholder="X min"
+                    value={panel.axisRange?.xMin !== 'auto' ? panel.axisRange?.xMin ?? '' : ''}
+                    onChange={(e) => updatePanelAxisRange(panel.id, { xMin: e.target.value ? parseFloat(e.target.value) : 'auto' })}
+                    className="px-2 py-1 border rounded text-center"
+                  />
+                  <input
+                    type="number"
+                    placeholder="X max"
+                    value={panel.axisRange?.xMax !== 'auto' ? panel.axisRange?.xMax ?? '' : ''}
+                    onChange={(e) => updatePanelAxisRange(panel.id, { xMax: e.target.value ? parseFloat(e.target.value) : 'auto' })}
+                    className="px-2 py-1 border rounded text-center"
+                  />
+                  <input
+                    type="number"
+                    placeholder="Y min"
+                    value={panel.axisRange?.yMin !== 'auto' ? panel.axisRange?.yMin ?? '' : ''}
+                    onChange={(e) => updatePanelAxisRange(panel.id, { yMin: e.target.value ? parseFloat(e.target.value) : 'auto' })}
+                    className="px-2 py-1 border rounded text-center"
+                  />
+                  <input
+                    type="number"
+                    placeholder="Y max"
+                    value={panel.axisRange?.yMax !== 'auto' ? panel.axisRange?.yMax ?? '' : ''}
+                    onChange={(e) => updatePanelAxisRange(panel.id, { yMax: e.target.value ? parseFloat(e.target.value) : 'auto' })}
+                    className="px-2 py-1 border rounded text-center"
+                  />
+                </div>
+              )}
             </div>
 
             {/* 그래프 영역 */}
-            <div className="p-4" style={{ height: panels.length === 1 ? '500px' : '400px' }}>
-              {panel.xColumn && panel.yColumn ? (
+            <div className="p-4" style={{ height: panels.length === 1 ? '500px' : panels.length <= 3 ? '400px' : '350px' }}>
+              {panel.xAxis && panel.yAxis ? (() => {
+                const chartData = getChartData(panel.xAxis, panel.yAxis)
+                const xDomain = getAxisDomain(panel, 'x', chartData)
+                const yDomain = getAxisDomain(panel, 'y', chartData)
+                return (
                 <ResponsiveContainer width="100%" height="100%">
                   <ScatterChart
                     margin={{ top: 20, right: 20, bottom: 40, left: 60 }}
                     onMouseDown={(e) => {
-                      if (selectionMode === 'brush' && e && e.xValue !== undefined) {
+                      if (e && e.xValue !== undefined) {
                         setIsDragging(true)
                         setDragStart({
                           x: e.xValue as number,
@@ -319,8 +556,8 @@ export default function MultiGraphView({ data }: MultiGraphViewProps) {
                       }
                     }}
                     onMouseUp={() => {
-                      if (isDragging && panel.xColumn && panel.yColumn) {
-                        handleBrushEnd(panel.id, panel.xColumn, panel.yColumn)
+                      if (isDragging && panel.xAxis && panel.yAxis) {
+                        handleBrushEnd(panel.id, panel.xAxis, panel.yAxis)
                       }
                     }}
                   >
@@ -328,11 +565,12 @@ export default function MultiGraphView({ data }: MultiGraphViewProps) {
                     <XAxis
                       type="number"
                       dataKey="x"
-                      name={panel.xColumn}
+                      name={panel.xAxis.label}
+                      domain={xDomain}
                       tick={{ fontSize: 11 }}
-                      tickFormatter={(value) => value.toExponential(1)}
+                      tickFormatter={(value) => typeof value === 'number' ? value.toExponential(1) : value}
                       label={{
-                        value: panel.xColumn,
+                        value: panel.xAxis.label,
                         position: 'bottom',
                         offset: 0,
                         style: { fontSize: 12, fill: '#666' }
@@ -341,11 +579,12 @@ export default function MultiGraphView({ data }: MultiGraphViewProps) {
                     <YAxis
                       type="number"
                       dataKey="y"
-                      name={panel.yColumn}
+                      name={panel.yAxis.label}
+                      domain={yDomain}
                       tick={{ fontSize: 11 }}
-                      tickFormatter={(value) => value.toExponential(1)}
+                      tickFormatter={(value) => typeof value === 'number' ? value.toExponential(1) : value}
                       label={{
-                        value: panel.yColumn,
+                        value: panel.yAxis.label,
                         angle: -90,
                         position: 'insideLeft',
                         style: { fontSize: 12, fill: '#666' }
@@ -353,14 +592,18 @@ export default function MultiGraphView({ data }: MultiGraphViewProps) {
                     />
                     <Tooltip
                       cursor={{ strokeDasharray: '3 3' }}
-                      content={({ payload }) => {
+                      content={({ payload, active }) => {
                         if (!payload || payload.length === 0) return null
                         const point = payload[0].payload
+                        // 호버 시 인덱스 동기화
+                        if (active && point.index !== hoveredIndex) {
+                          setTimeout(() => setHoveredIndex(point.index), 0)
+                        }
                         return (
                           <div className="bg-white p-2 border rounded shadow-lg text-xs">
                             <div><strong>시료 #{point.index + 1}</strong></div>
-                            <div>{panel.xColumn}: {point.x?.toFixed(4)}</div>
-                            <div>{panel.yColumn}: {point.y?.toFixed(4)}</div>
+                            <div>{panel.xAxis?.label}: {point.x?.toFixed(4)}</div>
+                            <div>{panel.yAxis?.label}: {point.y?.toFixed(4)}</div>
                             {point.isSelected && (
                               <div className="text-teal-600 font-medium mt-1">✓ 선택됨</div>
                             )}
@@ -384,32 +627,40 @@ export default function MultiGraphView({ data }: MultiGraphViewProps) {
                     )}
 
                     <Scatter
-                      data={getChartData(panel.xColumn, panel.yColumn)}
+                      data={chartData}
                       onClick={(data, index, event) => {
                         if (data && data.index !== undefined) {
                           handlePointClick(data.index, event as unknown as React.MouseEvent)
                         }
                       }}
+                      onMouseLeave={() => setHoveredIndex(null)}
                     >
-                      {getChartData(panel.xColumn, panel.yColumn).map((entry, index) => (
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={showHighlight && entry.isSelected ? '#f97316' : '#0d9488'}
-                          fillOpacity={showHighlight && entry.isSelected ? 1 : 0.6}
-                          stroke={showHighlight && entry.isSelected ? '#c2410c' : 'none'}
-                          strokeWidth={showHighlight && entry.isSelected ? 2 : 0}
-                          r={showHighlight && entry.isSelected ? 8 : 5}
-                          style={{ cursor: 'pointer' }}
-                        />
-                      ))}
+                      {chartData.map((entry, index) => {
+                        const isHighlighted = showHighlight && (entry.isSelected || entry.isHovered)
+                        const isSelected = entry.isSelected
+                        const isHovered = entry.isHovered && !entry.isSelected
+                        return (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={isSelected ? '#f97316' : isHovered ? '#3b82f6' : '#0d9488'}
+                            fillOpacity={isHighlighted ? 1 : 0.6}
+                            stroke={isSelected ? '#c2410c' : isHovered ? '#1d4ed8' : 'none'}
+                            strokeWidth={isHighlighted ? 2 : 0}
+                            r={isHighlighted ? 8 : 5}
+                            style={{ cursor: 'pointer' }}
+                          />
+                        )
+                      })}
                     </Scatter>
                   </ScatterChart>
                 </ResponsiveContainer>
-              ) : (
+                )
+              })() : (
                 <div className="h-full flex items-center justify-center text-gray-400">
                   <div className="text-center">
                     <Layers className="w-12 h-12 mx-auto mb-2 opacity-50" />
                     <p>X축과 Y축을 선택하세요</p>
+                    <p className="text-xs mt-1">비율(A/B)도 선택 가능</p>
                   </div>
                 </div>
               )}
@@ -422,13 +673,13 @@ export default function MultiGraphView({ data }: MultiGraphViewProps) {
       <div className="px-6 py-4 bg-gray-50 border-t text-sm text-gray-600">
         <div className="flex items-start gap-6">
           <div>
-            <strong>🖱️ 드래그 모드:</strong> 그래프 위에서 드래그하여 영역 내 시료 선택
+            <strong>🖱️ 드래그:</strong> 그래프 위에서 드래그하여 영역 내 시료 선택
           </div>
           <div>
-            <strong>👆 클릭 모드:</strong> 점 클릭으로 선택 (Ctrl+클릭: 추가, Shift+클릭: 다중)
+            <strong>👆 클릭:</strong> 점 클릭으로 선택 (Ctrl+클릭: 추가/제거)
           </div>
           <div>
-            <strong>🎯 선택 동기화:</strong> 한 그래프에서 선택하면 모든 그래프에서 하이라이트
+            <strong>📊 비율 축:</strong> 축 옆 화살표 클릭 → "비율 (A/B)" 선택
           </div>
         </div>
       </div>

@@ -11,7 +11,7 @@ import SavedAnalysis from '@/components/SavedAnalysis'
 import MyDataPanel from '@/components/MyDataPanel'
 import AuthModal from '@/components/AuthModal'
 import { useAuth } from '@/contexts/AuthContext'
-import { GeochemData, ColumnSelection, ScanResult, ScanSummary, GraphSettings } from '@/types/geochem'
+import { GeochemData, ColumnSelection, ScanResult, ScanSummary, GraphSettings, MultiViewPanel } from '@/types/geochem'
 import { SmartInsightResult } from '@/lib/smart-insight'
 import { saveAnalysisSettings, loadSharedAnalysis, loadDatasetMeta, loadFullDataset } from '@/lib/supabase-data'
 import { useSearchParams } from 'next/navigation'
@@ -44,6 +44,7 @@ function HomeContent() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [loadingShared, setLoadingShared] = useState(false)
   const [sharedError, setSharedError] = useState<string | null>(null)
+  const [multiViewPanels, setMultiViewPanels] = useState<MultiViewPanel[]>([])
 
   // URL에 shared 파라미터가 있으면 공유된 분석 불러오기
   useEffect(() => {
@@ -164,6 +165,40 @@ function HomeContent() {
       setGraphSettings(loadedGraphSettings as GraphSettings)
     }
     setMode('analysis')
+  }
+
+  const MAX_MULTIVIEW_PANELS = 4
+
+  // 현재 플롯을 다중 비교로 보내기
+  const handleSendToMultiView = () => {
+    if (!selectedColumns.x || !selectedColumns.y) return
+
+    // 최대 개수 확인
+    if (multiViewPanels.length >= MAX_MULTIVIEW_PANELS) {
+      alert(`최대 ${MAX_MULTIVIEW_PANELS}개까지만 비교할 수 있습니다.\n기존 그래프를 삭제한 후 추가해주세요.`)
+      setMode('multiview')
+      return
+    }
+
+    // 축 범위 설정 가져오기
+    const axisRange = graphSettings?.axisRange ? {
+      xMin: graphSettings.axisRange.xMin,
+      xMax: graphSettings.axisRange.xMax,
+      yMin: graphSettings.axisRange.yMin,
+      yMax: graphSettings.axisRange.yMax
+    } : undefined
+
+    const newPanel: MultiViewPanel = {
+      id: `panel-${Date.now()}`,
+      xAxis: selectedColumns.x,
+      yAxis: selectedColumns.y,
+      axisRange
+    }
+
+    // 기존 패널에 추가 (최대 4개)
+    setMultiViewPanels(prev => [...prev, newPanel])
+
+    setMode('multiview')
   }
 
   // 현재 분석 저장 (플롯 옆 버튼에서 호출)
@@ -501,7 +536,10 @@ function HomeContent() {
 
         {/* 다중 그래프 비교 모드 */}
         {mode === 'multiview' && data && (
-          <MultiGraphView data={data} />
+          <MultiGraphView
+            data={data}
+            initialPanels={multiViewPanels}
+          />
         )}
 
         {/* 저장된 분석 모드 */}
@@ -537,6 +575,16 @@ function HomeContent() {
             </div>
             {data && selectedColumns.x && selectedColumns.y && (
               <div className="mt-6">
+                {/* 다중 비교로 보내기 버튼 */}
+                <div className="flex justify-end mb-4">
+                  <button
+                    onClick={handleSendToMultiView}
+                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-teal-500 to-cyan-600 text-white rounded-lg hover:from-teal-600 hover:to-cyan-700 shadow-md hover:shadow-lg transition-all"
+                  >
+                    <Layers className="h-4 w-4" />
+                    다중 비교로 보내기
+                  </button>
+                </div>
                 <AnalysisPanel
                   data={data}
                   selectedColumns={selectedColumns}

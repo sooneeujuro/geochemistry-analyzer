@@ -234,4 +234,20 @@ export interface ChatSession {
   messages: ChatMessage[]
   created_at?: string
   updated_at?: string
+}
+
+// 다중 그래프 비교용 패널 축 범위
+export interface MultiViewAxisRange {
+  xMin?: number | 'auto'
+  xMax?: number | 'auto'
+  yMin?: number | 'auto'
+  yMax?: number | 'auto'
+}
+
+// 다중 그래프 비교용 패널 타입
+export interface MultiViewPanel {
+  id: string
+  xAxis: AxisConfig | null
+  yAxis: AxisConfig | null
+  axisRange?: MultiViewAxisRange
 } 
