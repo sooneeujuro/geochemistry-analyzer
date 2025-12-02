@@ -6,6 +6,7 @@ import DataViewer from '@/components/DataViewer'
 import AnalysisPanel from '@/components/AnalysisPanel'
 import ScanMode from '@/components/ScanMode'
 import SmartInsight from '@/components/SmartInsight'
+import MultiGraphView from '@/components/MultiGraphView'
 import SavedAnalysis from '@/components/SavedAnalysis'
 import MyDataPanel from '@/components/MyDataPanel'
 import AuthModal from '@/components/AuthModal'
@@ -14,10 +15,10 @@ import { GeochemData, ColumnSelection, ScanResult, ScanSummary, GraphSettings } 
 import { SmartInsightResult } from '@/lib/smart-insight'
 import { saveAnalysisSettings, loadSharedAnalysis, loadDatasetMeta, loadFullDataset } from '@/lib/supabase-data'
 import { useSearchParams } from 'next/navigation'
-import { BarChart3, Scan, ArrowLeft, BookOpen, User, LogOut, Star, Database, Sparkles } from 'lucide-react'
+import { BarChart3, Scan, ArrowLeft, BookOpen, User, LogOut, Star, Database, Sparkles, Layers } from 'lucide-react'
 import Link from 'next/link'
 
-type Mode = 'analysis' | 'scan' | 'smartinsight' | 'saved' | 'mydata'
+type Mode = 'analysis' | 'scan' | 'smartinsight' | 'multiview' | 'saved' | 'mydata'
 
 function HomeContent() {
   const { user, loading, signOut } = useAuth()
@@ -423,6 +424,18 @@ function HomeContent() {
               AI Smart Insight
             </button>
             <button
+              onClick={() => setMode('multiview')}
+              disabled={!data}
+              className={`flex items-center px-5 py-2.5 rounded-lg font-medium transition-all ${
+                mode === 'multiview'
+                  ? 'bg-gradient-to-r from-teal-500 to-cyan-600 text-white shadow-lg'
+                  : 'bg-white text-gray-700 shadow hover:shadow-md'
+              } ${!data ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              <Layers className="h-4 w-4 mr-2" />
+              다중 비교
+            </button>
+            <button
               onClick={() => setMode('saved')}
               className={`flex items-center px-5 py-2.5 rounded-lg font-medium transition-all ${
                 mode === 'saved'
@@ -484,6 +497,11 @@ function HomeContent() {
             cachedResult={smartInsightResult}
             onResultChange={setSmartInsightResult}
           />
+        )}
+
+        {/* 다중 그래프 비교 모드 */}
+        {mode === 'multiview' && data && (
+          <MultiGraphView data={data} />
         )}
 
         {/* 저장된 분석 모드 */}
