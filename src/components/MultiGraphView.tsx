@@ -372,6 +372,26 @@ export default function MultiGraphView({ data, initialPanels }: MultiGraphViewPr
     }).filter(d => d.x !== null && d.y !== null)
   }, [data.data, selectedIndices, hoveredIndex, getAxisValue])
 
+  // 데이터 범위 계산 (자동값 placeholder용)
+  const getDataBounds = useCallback((xAxis: AxisConfig | null, yAxis: AxisConfig | null) => {
+    if (!xAxis || !yAxis) return { xMin: 0, xMax: 1, yMin: 0, yMax: 1 }
+    const xValues: number[] = []
+    const yValues: number[] = []
+    data.data.forEach(row => {
+      const x = getAxisValue(row, xAxis)
+      const y = getAxisValue(row, yAxis)
+      if (x !== null) xValues.push(x)
+      if (y !== null) yValues.push(y)
+    })
+    if (xValues.length === 0 || yValues.length === 0) return { xMin: 0, xMax: 1, yMin: 0, yMax: 1 }
+    return {
+      xMin: Math.min(...xValues),
+      xMax: Math.max(...xValues),
+      yMin: Math.min(...yValues),
+      yMax: Math.max(...yValues)
+    }
+  }, [data.data, getAxisValue])
+
   // 선택된 시료 정보
   const selectionInfo = useMemo(() => {
     const count = selectedIndices.size
@@ -502,38 +522,41 @@ export default function MultiGraphView({ data, initialPanels }: MultiGraphViewPr
                 />
               </div>
               {/* 축 범위 설정 */}
-              {panel.xAxis && panel.yAxis && (
+              {panel.xAxis && panel.yAxis && (() => {
+                const bounds = getDataBounds(panel.xAxis, panel.yAxis)
+                return (
                 <div className="grid grid-cols-4 gap-2 text-xs">
                   <input
                     type="number"
-                    placeholder="X min"
+                    placeholder={bounds.xMin.toPrecision(3)}
                     value={panel.axisRange?.xMin !== 'auto' ? panel.axisRange?.xMin ?? '' : ''}
                     onChange={(e) => updatePanelAxisRange(panel.id, { xMin: e.target.value ? parseFloat(e.target.value) : 'auto' })}
-                    className="px-2 py-1 border rounded text-center"
+                    className="px-2 py-1 border rounded text-center placeholder:text-gray-400"
                   />
                   <input
                     type="number"
-                    placeholder="X max"
+                    placeholder={bounds.xMax.toPrecision(3)}
                     value={panel.axisRange?.xMax !== 'auto' ? panel.axisRange?.xMax ?? '' : ''}
                     onChange={(e) => updatePanelAxisRange(panel.id, { xMax: e.target.value ? parseFloat(e.target.value) : 'auto' })}
-                    className="px-2 py-1 border rounded text-center"
+                    className="px-2 py-1 border rounded text-center placeholder:text-gray-400"
                   />
                   <input
                     type="number"
-                    placeholder="Y min"
+                    placeholder={bounds.yMin.toPrecision(3)}
                     value={panel.axisRange?.yMin !== 'auto' ? panel.axisRange?.yMin ?? '' : ''}
                     onChange={(e) => updatePanelAxisRange(panel.id, { yMin: e.target.value ? parseFloat(e.target.value) : 'auto' })}
-                    className="px-2 py-1 border rounded text-center"
+                    className="px-2 py-1 border rounded text-center placeholder:text-gray-400"
                   />
                   <input
                     type="number"
-                    placeholder="Y max"
+                    placeholder={bounds.yMax.toPrecision(3)}
                     value={panel.axisRange?.yMax !== 'auto' ? panel.axisRange?.yMax ?? '' : ''}
                     onChange={(e) => updatePanelAxisRange(panel.id, { yMax: e.target.value ? parseFloat(e.target.value) : 'auto' })}
-                    className="px-2 py-1 border rounded text-center"
+                    className="px-2 py-1 border rounded text-center placeholder:text-gray-400"
                   />
                 </div>
-              )}
+                )
+              })()}
             </div>
             </div>
 

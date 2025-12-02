@@ -2021,8 +2021,8 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                 type="number"
                 value={axisRange.xMin === 'auto' ? '' : axisRange.xMin}
                 onChange={(e) => setAxisRange(prev => ({ ...prev, xMin: e.target.value === '' ? 'auto' : parseFloat(e.target.value) }))}
-                placeholder="자동"
-                className="w-full p-2 border rounded-md"
+                placeholder={adjusted1to1Range.xMin.toPrecision(4)}
+                className="w-full p-2 border rounded-md placeholder:text-gray-400"
               />
             </div>
             <div>
@@ -2031,8 +2031,8 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                 type="number"
                 value={axisRange.xMax === 'auto' ? '' : axisRange.xMax}
                 onChange={(e) => setAxisRange(prev => ({ ...prev, xMax: e.target.value === '' ? 'auto' : parseFloat(e.target.value) }))}
-                placeholder="자동"
-                className="w-full p-2 border rounded-md"
+                placeholder={adjusted1to1Range.xMax.toPrecision(4)}
+                className="w-full p-2 border rounded-md placeholder:text-gray-400"
               />
             </div>
             <div>
@@ -2041,8 +2041,8 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                 type="number"
                 value={axisRange.yMin === 'auto' ? '' : axisRange.yMin}
                 onChange={(e) => setAxisRange(prev => ({ ...prev, yMin: e.target.value === '' ? 'auto' : parseFloat(e.target.value) }))}
-                placeholder="자동"
-                className="w-full p-2 border rounded-md"
+                placeholder={adjusted1to1Range.yMin.toPrecision(4)}
+                className="w-full p-2 border rounded-md placeholder:text-gray-400"
               />
             </div>
             <div>
@@ -2051,8 +2051,8 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                 type="number"
                 value={axisRange.yMax === 'auto' ? '' : axisRange.yMax}
                 onChange={(e) => setAxisRange(prev => ({ ...prev, yMax: e.target.value === '' ? 'auto' : parseFloat(e.target.value) }))}
-                placeholder="자동"
-                className="w-full p-2 border rounded-md"
+                placeholder={adjusted1to1Range.yMax.toPrecision(4)}
+                className="w-full p-2 border rounded-md placeholder:text-gray-400"
               />
             </div>
           </div>
