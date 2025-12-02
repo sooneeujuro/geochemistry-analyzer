@@ -2577,7 +2577,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                   fontWeight: styleOptions.axisTitleBold ? 'bold' : 'normal'
                 }
               }}
-              allowDataOverflow={xLogScale}
+              allowDataOverflow={xLogScale || axisRange.xMin !== 'auto' || axisRange.xMax !== 'auto'}
             />
 
             <YAxis
@@ -2608,9 +2608,9 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                   fontWeight: styleOptions.axisTitleBold ? 'bold' : 'normal'
                 }
               }}
-              allowDataOverflow={yLogScale}
+              allowDataOverflow={yLogScale || axisRange.yMin !== 'auto' || axisRange.yMax !== 'auto'}
             />
-            
+
             <Tooltip
               formatter={(value: any, name: string) => {
                 // name이 'x'이면 X축 포맷, 'y'이면 Y축 포맷 사용
