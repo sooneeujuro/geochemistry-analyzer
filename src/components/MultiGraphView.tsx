@@ -98,7 +98,7 @@ export default function MultiGraphView({ data }: MultiGraphViewProps) {
       })
     } else if (event.shiftKey) {
       // Shift + 클릭: 추가
-      setSelectedIndices(prev => new Set([...prev, index]))
+      setSelectedIndices(prev => new Set([...Array.from(prev), index]))
     } else {
       // 일반 클릭: 단일 선택
       setSelectedIndices(new Set([index]))
