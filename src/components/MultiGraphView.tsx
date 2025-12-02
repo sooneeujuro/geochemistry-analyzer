@@ -240,24 +240,25 @@ export default function MultiGraphView({ data, initialPanels }: MultiGraphViewPr
     ))
   }
 
-  // 축 도메인 계산
-  const getAxisDomain = (panel: GraphPanel, axis: 'x' | 'y', chartData: any[]): [number | 'auto', number | 'auto'] => {
+  // 축 도메인 계산 - 항상 숫자 배열 반환
+  const getAxisDomain = (panel: GraphPanel, axis: 'x' | 'y', chartData: any[]): [number, number] => {
     const range = panel.axisRange
     const minKey = axis === 'x' ? 'xMin' : 'yMin'
     const maxKey = axis === 'x' ? 'xMax' : 'yMax'
     const dataKey = axis
 
-    const min = range?.[minKey]
-    const max = range?.[maxKey]
+    const userMin = range?.[minKey]
+    const userMax = range?.[maxKey]
 
-    const dataValues = chartData.map(d => d[dataKey]).filter(v => v !== null && v !== undefined)
-    const dataMin = Math.min(...dataValues)
-    const dataMax = Math.max(...dataValues)
+    const dataValues = chartData.map(d => d[dataKey]).filter(v => v !== null && v !== undefined && !isNaN(v))
+    const dataMin = dataValues.length > 0 ? Math.min(...dataValues) : 0
+    const dataMax = dataValues.length > 0 ? Math.max(...dataValues) : 1
 
-    return [
-      min !== undefined && min !== 'auto' ? min : dataMin,
-      max !== undefined && max !== 'auto' ? max : dataMax
-    ]
+    // 사용자 입력값이 숫자이면 그 값 사용, 아니면 데이터 범위 사용
+    const min = typeof userMin === 'number' ? userMin : dataMin
+    const max = typeof userMax === 'number' ? userMax : dataMax
+
+    return [min, max]
   }
 
   // 선택 초기화
@@ -265,18 +266,25 @@ export default function MultiGraphView({ data, initialPanels }: MultiGraphViewPr
     setSelectedIndices(new Set())
   }
 
-  // 이미지로 내보내기
+  // 이미지로 내보내기 (그래프 영역만)
   const exportAsImage = async () => {
     if (!graphContainerRef.current || isExporting) return
 
     setIsExporting(true)
     try {
+      // 설정 패널들 일시적으로 숨기기
+      const settingsPanels = graphContainerRef.current.querySelectorAll('[data-settings-panel]')
+      settingsPanels.forEach(el => (el as HTMLElement).style.display = 'none')
+
       const canvas = await html2canvas(graphContainerRef.current, {
         backgroundColor: '#ffffff',
         scale: 2, // 고해상도
         logging: false,
         useCORS: true
       })
+
+      // 설정 패널들 다시 표시
+      settingsPanels.forEach(el => (el as HTMLElement).style.display = '')
 
       const link = document.createElement('a')
       link.download = `multiview-comparison-${new Date().toISOString().slice(0, 10)}.png`
@@ -461,18 +469,19 @@ export default function MultiGraphView({ data, initialPanels }: MultiGraphViewPr
       >
         {panels.map((panel, panelIndex) => (
           <div key={panel.id} className="border rounded-lg overflow-hidden">
-            {/* 패널 헤더 */}
-            <div className="bg-gray-50 px-4 py-3 border-b flex items-center justify-between">
-              <span className="font-medium text-gray-700">그래프 {panelIndex + 1}</span>
-              {panels.length > 1 && (
-                <button
-                  onClick={() => removePanel(panel.id)}
-                  className="p-1 text-gray-400 hover:text-red-500 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
+            {/* 패널 헤더 + 축 선택 (이미지 저장 시 제외) */}
+            <div data-settings-panel className="bg-gray-50">
+              <div className="px-4 py-3 border-b flex items-center justify-between">
+                <span className="font-medium text-gray-700">그래프 {panelIndex + 1}</span>
+                {panels.length > 1 && (
+                  <button
+                    onClick={() => removePanel(panel.id)}
+                    className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
 
             {/* 축 선택 */}
             <div className="p-4 bg-gray-50 border-b">
@@ -526,13 +535,27 @@ export default function MultiGraphView({ data, initialPanels }: MultiGraphViewPr
                 </div>
               )}
             </div>
+            </div>
 
             {/* 그래프 영역 */}
             <div className="p-4" style={{ height: panels.length === 1 ? '500px' : panels.length <= 3 ? '400px' : '350px' }}>
               {panel.xAxis && panel.yAxis ? (() => {
                 const chartData = getChartData(panel.xAxis, panel.yAxis)
-                const xDomain = getAxisDomain(panel, 'x', chartData)
-                const yDomain = getAxisDomain(panel, 'y', chartData)
+                const range = panel.axisRange
+                // 사용자 지정 범위가 있으면 그 값 사용, 없으면 'dataMin'/'dataMax' 사용
+                // 사용자가 범위를 지정했는지 확인
+                const hasCustomXRange = typeof range?.xMin === 'number' || typeof range?.xMax === 'number'
+                const hasCustomYRange = typeof range?.yMin === 'number' || typeof range?.yMax === 'number'
+
+                // domain이 undefined면 Recharts 자동 계산, 숫자면 강제 적용
+                const xDomain: [number, number] | undefined = hasCustomXRange ? [
+                  typeof range?.xMin === 'number' ? range.xMin : Math.min(...chartData.map(d => d.x)),
+                  typeof range?.xMax === 'number' ? range.xMax : Math.max(...chartData.map(d => d.x))
+                ] : undefined
+                const yDomain: [number, number] | undefined = hasCustomYRange ? [
+                  typeof range?.yMin === 'number' ? range.yMin : Math.min(...chartData.map(d => d.y)),
+                  typeof range?.yMax === 'number' ? range.yMax : Math.max(...chartData.map(d => d.y))
+                ] : undefined
                 return (
                 <ResponsiveContainer width="100%" height="100%">
                   <ScatterChart
@@ -567,6 +590,7 @@ export default function MultiGraphView({ data, initialPanels }: MultiGraphViewPr
                       dataKey="x"
                       name={panel.xAxis.label}
                       domain={xDomain}
+                      allowDataOverflow={hasCustomXRange}
                       tick={{ fontSize: 11 }}
                       tickFormatter={(value) => typeof value === 'number' ? value.toExponential(1) : value}
                       label={{
@@ -581,6 +605,7 @@ export default function MultiGraphView({ data, initialPanels }: MultiGraphViewPr
                       dataKey="y"
                       name={panel.yAxis.label}
                       domain={yDomain}
+                      allowDataOverflow={hasCustomYRange}
                       tick={{ fontSize: 11 }}
                       tickFormatter={(value) => typeof value === 'number' ? value.toExponential(1) : value}
                       label={{
