@@ -524,10 +524,19 @@ export default function MultiGraphView({ data, initialPanels }: MultiGraphViewPr
               {/* 축 범위 설정 */}
               {panel.xAxis && panel.yAxis && (() => {
                 const bounds = getDataBounds(panel.xAxis, panel.yAxis)
+                // 축 범위의 10% 언저리의 10의 거듭제곱으로 step 계산
+                const getStepValue = (range: number) => {
+                  const tenPercent = Math.abs(range) * 0.1
+                  if (tenPercent === 0 || !isFinite(tenPercent)) return 1
+                  return Math.pow(10, Math.round(Math.log10(tenPercent)))
+                }
+                const xStep = getStepValue(bounds.xMax - bounds.xMin)
+                const yStep = getStepValue(bounds.yMax - bounds.yMin)
                 return (
                 <div className="grid grid-cols-4 gap-2 text-xs">
                   <input
                     type="number"
+                    step={xStep}
                     placeholder={bounds.xMin.toPrecision(3)}
                     value={panel.axisRange?.xMin !== 'auto' ? panel.axisRange?.xMin ?? '' : ''}
                     onChange={(e) => updatePanelAxisRange(panel.id, { xMin: e.target.value ? parseFloat(e.target.value) : 'auto' })}
@@ -535,6 +544,7 @@ export default function MultiGraphView({ data, initialPanels }: MultiGraphViewPr
                   />
                   <input
                     type="number"
+                    step={xStep}
                     placeholder={bounds.xMax.toPrecision(3)}
                     value={panel.axisRange?.xMax !== 'auto' ? panel.axisRange?.xMax ?? '' : ''}
                     onChange={(e) => updatePanelAxisRange(panel.id, { xMax: e.target.value ? parseFloat(e.target.value) : 'auto' })}
@@ -542,6 +552,7 @@ export default function MultiGraphView({ data, initialPanels }: MultiGraphViewPr
                   />
                   <input
                     type="number"
+                    step={yStep}
                     placeholder={bounds.yMin.toPrecision(3)}
                     value={panel.axisRange?.yMin !== 'auto' ? panel.axisRange?.yMin ?? '' : ''}
                     onChange={(e) => updatePanelAxisRange(panel.id, { yMin: e.target.value ? parseFloat(e.target.value) : 'auto' })}
@@ -549,6 +560,7 @@ export default function MultiGraphView({ data, initialPanels }: MultiGraphViewPr
                   />
                   <input
                     type="number"
+                    step={yStep}
                     placeholder={bounds.yMax.toPrecision(3)}
                     value={panel.axisRange?.yMax !== 'auto' ? panel.axisRange?.yMax ?? '' : ''}
                     onChange={(e) => updatePanelAxisRange(panel.id, { yMax: e.target.value ? parseFloat(e.target.value) : 'auto' })}

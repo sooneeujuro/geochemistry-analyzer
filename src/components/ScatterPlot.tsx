@@ -2011,7 +2011,19 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
         </div>
       )}
 
-      {showAxisPanel && (
+      {showAxisPanel && (() => {
+        // 축 범위의 10% 언저리의 10의 거듭제곱으로 step 계산
+        const getStepValue = (range: number) => {
+          const tenPercent = Math.abs(range) * 0.1
+          if (tenPercent === 0 || !isFinite(tenPercent)) return 1
+          return Math.pow(10, Math.round(Math.log10(tenPercent)))
+        }
+        const xRange = adjusted1to1Range.xMax - adjusted1to1Range.xMin
+        const yRange = adjusted1to1Range.yMax - adjusted1to1Range.yMin
+        const xStep = getStepValue(xRange)
+        const yStep = getStepValue(yRange)
+
+        return (
         <div className="p-4 bg-white border rounded-lg">
           <h3 className="font-medium mb-3">축 범위 설정</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -2019,6 +2031,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
               <label className="block text-sm font-medium mb-1">X축 최솟값</label>
               <input
                 type="number"
+                step={xStep}
                 value={axisRange.xMin === 'auto' ? '' : axisRange.xMin}
                 onChange={(e) => setAxisRange(prev => ({ ...prev, xMin: e.target.value === '' ? 'auto' : parseFloat(e.target.value) }))}
                 placeholder={adjusted1to1Range.xMin.toPrecision(4)}
@@ -2029,6 +2042,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
               <label className="block text-sm font-medium mb-1">X축 최댓값</label>
               <input
                 type="number"
+                step={xStep}
                 value={axisRange.xMax === 'auto' ? '' : axisRange.xMax}
                 onChange={(e) => setAxisRange(prev => ({ ...prev, xMax: e.target.value === '' ? 'auto' : parseFloat(e.target.value) }))}
                 placeholder={adjusted1to1Range.xMax.toPrecision(4)}
@@ -2039,6 +2053,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
               <label className="block text-sm font-medium mb-1">Y축 최솟값</label>
               <input
                 type="number"
+                step={yStep}
                 value={axisRange.yMin === 'auto' ? '' : axisRange.yMin}
                 onChange={(e) => setAxisRange(prev => ({ ...prev, yMin: e.target.value === '' ? 'auto' : parseFloat(e.target.value) }))}
                 placeholder={adjusted1to1Range.yMin.toPrecision(4)}
@@ -2049,6 +2064,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
               <label className="block text-sm font-medium mb-1">Y축 최댓값</label>
               <input
                 type="number"
+                step={yStep}
                 value={axisRange.yMax === 'auto' ? '' : axisRange.yMax}
                 onChange={(e) => setAxisRange(prev => ({ ...prev, yMax: e.target.value === '' ? 'auto' : parseFloat(e.target.value) }))}
                 placeholder={adjusted1to1Range.yMax.toPrecision(4)}
@@ -2206,7 +2222,8 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
             </p>
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* 레퍼런스 이미지 오버레이 패널 */}
       {showReferencePanel && (
