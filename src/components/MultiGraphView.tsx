@@ -231,13 +231,22 @@ export default function MultiGraphView({ data, initialPanels }: MultiGraphViewPr
     ))
   }
 
-  // 패널 축 범위 변경
+  // 패널 축 범위 변경 (min > max 방지)
   const updatePanelAxisRange = (panelId: string, range: Partial<MultiViewAxisRange>) => {
-    setPanels(panels.map(p =>
-      p.id === panelId
-        ? { ...p, axisRange: { ...p.axisRange, ...range } }
-        : p
-    ))
+    setPanels(panels.map(p => {
+      if (p.id !== panelId) return p
+      const updated = { ...p.axisRange, ...range }
+      // min > max 방지: 자동으로 교정
+      if (typeof updated.xMin === 'number' && typeof updated.xMax === 'number' && updated.xMin > updated.xMax) {
+        if ('xMin' in range) updated.xMin = updated.xMax
+        else updated.xMax = updated.xMin
+      }
+      if (typeof updated.yMin === 'number' && typeof updated.yMax === 'number' && updated.yMin > updated.yMax) {
+        if ('yMin' in range) updated.yMin = updated.yMax
+        else updated.yMax = updated.yMin
+      }
+      return { ...p, axisRange: updated }
+    }))
   }
 
   // 축 도메인 계산 - 항상 숫자 배열 반환

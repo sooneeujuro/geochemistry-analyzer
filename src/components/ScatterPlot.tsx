@@ -2023,6 +2023,24 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
         const xStep = getStepValue(xRange)
         const yStep = getStepValue(yRange)
 
+        // 축 범위 검증 함수: min이 max보다 크면 교정
+        const handleAxisRangeChange = (key: 'xMin' | 'xMax' | 'yMin' | 'yMax', value: string) => {
+          const newValue = value === '' ? 'auto' : parseFloat(value)
+          setAxisRange(prev => {
+            const updated = { ...prev, [key]: newValue }
+            // min > max 방지: 자동으로 교정
+            if (typeof updated.xMin === 'number' && typeof updated.xMax === 'number' && updated.xMin > updated.xMax) {
+              if (key === 'xMin') updated.xMin = updated.xMax
+              else updated.xMax = updated.xMin
+            }
+            if (typeof updated.yMin === 'number' && typeof updated.yMax === 'number' && updated.yMin > updated.yMax) {
+              if (key === 'yMin') updated.yMin = updated.yMax
+              else updated.yMax = updated.yMin
+            }
+            return updated
+          })
+        }
+
         return (
         <div className="p-4 bg-white border rounded-lg">
           <h3 className="font-medium mb-3">축 범위 설정</h3>
@@ -2033,7 +2051,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                 type="number"
                 step={xStep}
                 value={axisRange.xMin === 'auto' ? '' : axisRange.xMin}
-                onChange={(e) => setAxisRange(prev => ({ ...prev, xMin: e.target.value === '' ? 'auto' : parseFloat(e.target.value) }))}
+                onChange={(e) => handleAxisRangeChange('xMin', e.target.value)}
                 placeholder={adjusted1to1Range.xMin.toPrecision(4)}
                 className="w-full p-2 border rounded-md placeholder:text-gray-400"
               />
@@ -2044,7 +2062,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                 type="number"
                 step={xStep}
                 value={axisRange.xMax === 'auto' ? '' : axisRange.xMax}
-                onChange={(e) => setAxisRange(prev => ({ ...prev, xMax: e.target.value === '' ? 'auto' : parseFloat(e.target.value) }))}
+                onChange={(e) => handleAxisRangeChange('xMax', e.target.value)}
                 placeholder={adjusted1to1Range.xMax.toPrecision(4)}
                 className="w-full p-2 border rounded-md placeholder:text-gray-400"
               />
@@ -2055,7 +2073,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                 type="number"
                 step={yStep}
                 value={axisRange.yMin === 'auto' ? '' : axisRange.yMin}
-                onChange={(e) => setAxisRange(prev => ({ ...prev, yMin: e.target.value === '' ? 'auto' : parseFloat(e.target.value) }))}
+                onChange={(e) => handleAxisRangeChange('yMin', e.target.value)}
                 placeholder={adjusted1to1Range.yMin.toPrecision(4)}
                 className="w-full p-2 border rounded-md placeholder:text-gray-400"
               />
@@ -2066,7 +2084,7 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                 type="number"
                 step={yStep}
                 value={axisRange.yMax === 'auto' ? '' : axisRange.yMax}
-                onChange={(e) => setAxisRange(prev => ({ ...prev, yMax: e.target.value === '' ? 'auto' : parseFloat(e.target.value) }))}
+                onChange={(e) => handleAxisRangeChange('yMax', e.target.value)}
                 placeholder={adjusted1to1Range.yMax.toPrecision(4)}
                 className="w-full p-2 border rounded-md placeholder:text-gray-400"
               />
@@ -2081,7 +2099,14 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                   type="checkbox"
                   id="xLogScale"
                   checked={xLogScale}
-                  onChange={(e) => setXLogScale(e.target.checked)}
+                  onChange={(e) => {
+                    const checked = e.target.checked
+                    setXLogScale(checked)
+                    // 로그 스케일 해제 시 축 범위를 자동으로 리셋
+                    if (!checked) {
+                      setAxisRange(prev => ({ ...prev, xMin: 'auto', xMax: 'auto' }))
+                    }
+                  }}
                   className="mr-2"
                 />
                 <label htmlFor="xLogScale" className="text-sm font-medium">X축 로그 스케일</label>
@@ -2091,7 +2116,14 @@ export default function ScatterPlot({ data, selectedColumns, statistics, isPCAMo
                   type="checkbox"
                   id="yLogScale"
                   checked={yLogScale}
-                  onChange={(e) => setYLogScale(e.target.checked)}
+                  onChange={(e) => {
+                    const checked = e.target.checked
+                    setYLogScale(checked)
+                    // 로그 스케일 해제 시 축 범위를 자동으로 리셋
+                    if (!checked) {
+                      setAxisRange(prev => ({ ...prev, yMin: 'auto', yMax: 'auto' }))
+                    }
+                  }}
                   className="mr-2"
                 />
                 <label htmlFor="yLogScale" className="text-sm font-medium">Y축 로그 스케일</label>
